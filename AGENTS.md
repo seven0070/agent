@@ -9,9 +9,9 @@ We are building a local-first AI agent for Windows capable of controlled **metam
 The system is built strictly layer-by-layer:
 
 - **LAYER -1 — CONSTITUTION**: Immutable boundaries & invariants (identity, security, human approval, authority boundaries).
-- **LAYER 0 — FOUNDATION (Current)**: Environment, structure, config, structured logging, component versioning specifications, verification tools.
-- **LAYER 1 — AGENT CORE (Planned)**: Base AgentScope runtime integration, session lifecycle, message schema.
-- **LAYER 2 — INTELLIGENCE / MODELS (Planned)**: Model API routing, fallback logic, prompt template engines.
+- **LAYER 0 — FOUNDATION (Implemented)**: Environment, structure, config, structured logging, component versioning specifications, verification tools.
+- **LAYER 1 — AGENT CORE (Implemented)**: Base AgentScope 2.x runtime integration, session lifecycle, message schema, agent-v1.
+- **LAYER 2 — INTELLIGENCE / MODELS (Implemented)**: Provider-agnostic model abstraction, ModelSpec registry, secure credential handling, deterministic router, health status tracking, fallback engine, local model readiness.
 - **LAYER 3 — MEMORY / RAG (Planned)**: Short-term context & long-term vector/graph memory retrieval.
 - **LAYER 4 — TOOLS / SKILLS / MCP (Planned)**: Tool execution registry, skill management, MCP integration.
 - **LAYER 5 — PLANNING / ORCHESTRATION (Planned)**: Dynamic planner, multi-agent workflow orchestration.
@@ -33,21 +33,22 @@ The system is built strictly layer-by-layer:
 - The agent framework and runtime code **CANNOT** modify constitutional rules, audit trails, human approval authority, or Evolution Controller boundaries.
 - Any attempt to bypass or overwrite constitutional constraints must raise a `ConstitutionalViolationError`.
 
-### C. Evolution Controller Separation
+### C. Intelligence & Model Layer Security (Layer 2)
+- Models are infrastructure and must **NOT** have direct filesystem, shell, or credential mutation permissions.
+- Secret credentials must be read from environment variables and redacted in all logs, representations, and serializations (`***REDACTED***`).
+
+### D. Evolution Controller Separation
 - The **Evolution Controller** is **NOT** an internal execution layer within the agent.
 - It operates as an external control plane beside the agent.
 - Agent performs tasks; Evolution Controller observes, evaluates, and governs version candidate promotion or rollback.
 
-### D. Component Versioning Policy
+### E. Component Versioning Policy
 - All evolvable components (planners, memory strategies, skills, tools) must be explicitly versioned (e.g. `planner-v1`, `planner-v2`).
 - Mutations must generate new versioned candidates rather than overwriting existing source files directly.
 
-### E. Jcode & AgentScope Roles
-- **AgentScope** acts as the core multi-agent infrastructure (agents, models, messaging, context).
-- **Jcode** acts as a specialized coding subsystem invoked for software-engineering tasks (read, edit, test, verify).
-
 ## 4. Engineering & Testing Practices
-- Use `pytest` for unit and integration tests.
+- Use `pytest` for unit and integration tests (`PYTHONPATH=src pytest`).
+- Execute layer verification tools (`python scripts/verify_layer2.py`).
 - Maintain minimal dependencies specified in `pyproject.toml`.
-- All tests must run non-interactively without requiring external services or long-running daemons.
+- All tests must run non-interactively without requiring external cloud services or long-running daemons.
 - Never commit secrets, API keys, or private tokens.

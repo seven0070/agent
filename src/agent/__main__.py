@@ -1,5 +1,5 @@
 """
-CLI Entrypoint for Self-Evolving Agent Framework (Layer 1 AgentScope Core).
+CLI Entrypoint for Self-Evolving Agent Framework (Layer 2 Intelligence / Models).
 """
 
 import sys
@@ -11,6 +11,7 @@ from agent.logging import get_logger, set_log_context
 from agent.constitution import ConstitutionalGuard
 from agent.core import AgentTask, AgentV1
 from agent.integrations.agentscope import AgentScopeAdapter
+from agent.models import ModelRouter
 
 async def run_agent_cli(prompt: str) -> None:
     settings = get_settings()
@@ -26,14 +27,15 @@ async def run_agent_cli(prompt: str) -> None:
         component_version="agent-v1",
     )
 
-    logger.info("Initializing AgentSystem with AgentScope Layer 1 Core", extra={"event_type": "startup"})
+    logger.info("Initializing AgentSystem with Layer 2 Intelligence Router", extra={"event_type": "startup"})
 
     # Layer -1 Constitutional Validation
     guard = ConstitutionalGuard()
     guard.validate_action({"type": "execute_task", "target": "agent_core"})
 
-    # Layer 1 AgentScope Adapter & Agent Initialization
-    adapter = AgentScopeAdapter(name="agent-v1-cli")
+    # Layer 2 ModelRouter & Layer 1 Adapter Initialization
+    router = ModelRouter()
+    adapter = AgentScopeAdapter(name="agent-v1-cli", router=router)
     agent = AgentV1(adapter=adapter)
 
     task = AgentTask(
@@ -42,7 +44,7 @@ async def run_agent_cli(prompt: str) -> None:
         session_id=session_id,
     )
 
-    logger.info(f"Executing task '{task_id}' via AgentScope engine", extra={"event_type": "task_start"})
+    logger.info(f"Executing task '{task_id}' via Layer 2 Router", extra={"event_type": "task_start"})
     result = await agent.execute_task(task)
     logger.info(f"Task '{task_id}' executed successfully", extra={"event_type": "task_complete"})
 
