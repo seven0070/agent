@@ -1,5 +1,5 @@
 """
-Capability Broker Enforcing Security Permissions and Executing Tools.
+Capability Broker Enforcing Security Permissions and Executing Tools via Runtime Sandbox.
 """
 
 import time
@@ -11,6 +11,7 @@ from agent.capabilities.spec import ToolSpec
 from agent.capabilities.tools.calculator import evaluate_math_expression
 from agent.capabilities.tools.workspace import WorkspaceManager
 from agent.capabilities.tools.coding import CodingEngineToolWrapper
+from agent.runtime import LocalAgentScopeRuntime, RuntimeSandbox, NetworkPolicy
 from agent.logging import get_logger
 
 logger = get_logger("agent.capabilities.broker")
@@ -18,6 +19,7 @@ logger = get_logger("agent.capabilities.broker")
 class CapabilityBroker:
     """
     Security boundary broker managing tool execution, permission enforcement, and result normalization.
+    Integrates with Layer 7 RuntimeSandbox for process and workspace execution.
     """
 
     def __init__(
@@ -25,16 +27,20 @@ class CapabilityBroker:
         registry: Optional[ToolRegistry] = None,
         permission_policy: Optional[ToolPermissionPolicy] = None,
         workspace_dir: str = "data/workspace",
+        runtime: Optional[LocalAgentScopeRuntime] = None,
     ) -> None:
         self.registry = registry or ToolRegistry()
         self.permission_policy = permission_policy or ToolPermissionPolicy()
-        self.workspace_manager = WorkspaceManager(workspace_dir=workspace_dir)
+        self.runtime = runtime or LocalAgentScopeRuntime(base_workspace_dir=workspace_dir)
+        self.runtime_session = self.runtime.create_session(network_policy=NetworkPolicy.DENY)
+        self.sandbox = self.runtime.get_sandbox(self.runtime_session.session_id) or RuntimeSandbox(session=self.runtime_session)
+        self.workspace_manager = WorkspaceManager(workspace_dir=self.sandbox.workspace_dir)
 
         from agent.coding.jcode.adapter import JcodeAdapter
         from agent.coding.permissions import JcodePermissionInterceptor
 
         jcode_adapter = JcodeAdapter(
-            workspace_dir=workspace_dir,
+            workspace_dir=self.sandbox.workspace_dir,
             permission_interceptor=JcodePermissionInterceptor(policy=self.permission_policy),
         )
         self.coding_tool_wrapper = CodingEngineToolWrapper(adapter=jcode_adapter)
@@ -81,7 +87,7 @@ class CapabilityBroker:
 
     def execute_tool(self, tool_id: str, kwargs: Dict[str, Any]) -> CapabilityResult:
         """
-        Executes a registered tool if permitted by ToolPermissionPolicy.
+        Executes a registered tool if permitted by ToolPermissionPolicy via RuntimeSandbox.
         Normalizes outputs, permission denials, and execution errors.
         """
         spec = self.registry.get_tool(tool_id)
@@ -110,7 +116,7 @@ class CapabilityBroker:
                 execution_time_ms=0.0,
             )
 
-        # Execute approved tool
+        # Execute approved tool inside Layer 7 sandbox
         try:
             if tool_id == "calculator-v1":
                 expr = kwargs.get("expression", "")
@@ -126,6 +132,8 @@ class CapabilityBroker:
 
             elif tool_id == "read_file-v1":
                 rel_path = kwargs.get("relative_path", "")
+                # Enforce sandbox path resolution
+                self.sandbox.resolve_and_validate_path(rel_path)
                 content = self.workspace_manager.read_file(rel_path)
                 elapsed_ms = (time.perf_counter() - start_time) * 1000
                 return CapabilityResult(
@@ -139,6 +147,8 @@ class CapabilityBroker:
             elif tool_id == "write_file-v1":
                 rel_path = kwargs.get("relative_path", "")
                 content = kwargs.get("content", "")
+                # Enforce sandbox path resolution
+                self.sandbox.resolve_and_validate_path(rel_path)
                 msg = self.workspace_manager.write_file(rel_path, content)
                 elapsed_ms = (time.perf_counter() - start_time) * 1000
                 return CapabilityResult(
