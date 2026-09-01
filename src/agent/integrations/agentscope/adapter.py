@@ -1,7 +1,7 @@
 """
 AgentScope 2.x Adapter Implementation.
 Maps application domain models (AgentTask, AgentResult) to AgentScope 2.x abstractions.
-Integrated with Layer 2 ModelRouter for dynamic provider selection and fallback.
+Integrated with Layer 2 ModelRouter and Layer 3 ContextBuilder for memory context.
 """
 
 from typing import Any, Dict, List, Optional
@@ -12,11 +12,15 @@ from agent.core.models import AgentTask, AgentResult, ModelConfigInfo, ModelExec
 from agent.models.router import ModelRouter
 from agent.models.spec import ModelSpec
 from agent.models.mock import MockChatModel
+from agent.memory.context import ContextBuilder
+from agent.memory.session import SessionMemoryManager
+from agent.memory.sqlite import SQLiteMemoryBackend
+from agent.memory.models import MemoryItem, MemoryType
 
 class AgentScopeAdapter:
     """
     Adapter decoupling application domain from AgentScope 2.x engine internals.
-    Uses Layer 2 ModelRouter for provider management and fallback execution.
+    Uses Layer 2 ModelRouter for provider management and Layer 3 ContextBuilder for memory context.
     """
 
     def __init__(
@@ -24,12 +28,17 @@ class AgentScopeAdapter:
         name: str = "agent-v1-core",
         system_prompt: str = "You are a helpful AI assistant.",
         router: Optional[ModelRouter] = None,
+        context_builder: Optional[ContextBuilder] = None,
         model: Optional[ChatModelBase] = None,
         model_config_info: Optional[ModelConfigInfo] = None,
     ) -> None:
         self.name = name
         self.system_prompt = system_prompt
         self.router = router or ModelRouter()
+        self.context_builder = context_builder or ContextBuilder(
+            session_manager=SessionMemoryManager(),
+            long_term_memory=SQLiteMemoryBackend(),
+        )
         self.model_config_info = model_config_info or ModelConfigInfo()
 
         # Backward compatibility support if direct model instance is passed
@@ -42,7 +51,6 @@ class AgentScopeAdapter:
                 priority=0,
             )
             self.router.registry.register(spec)
-            # Override factory creation for custom-override ID to return passed model
             original_create = self.router.factory.create_model
             def _custom_create(s: ModelSpec) -> ChatModelBase:
                 if s.id == "custom-override":
@@ -50,7 +58,6 @@ class AgentScopeAdapter:
                 return original_create(s)
             self.router.factory.create_model = _custom_create
 
-        # Helper property for Layer 1 test assertion compatibility
         init_model = model or self.router.factory.create_model(self.router.select_model())
         self._agentscope_agent = Agent(
             name=self.name,
@@ -59,14 +66,26 @@ class AgentScopeAdapter:
         )
 
     def convert_task_to_msg(self, task: AgentTask) -> Msg:
-        """Converts application AgentTask to AgentScope UserMsg."""
-        return UserMsg(name="user", content=task.prompt)
+        """Converts application AgentTask to AgentScope UserMsg with ContextBuilder prompt."""
+        contextual_prompt = self.context_builder.build_context_prompt(
+            task_prompt=task.prompt,
+            session_id=task.session_id,
+        )
+        return UserMsg(name="user", content=contextual_prompt)
 
     async def execute(self, task: AgentTask) -> AgentResult:
         """
-        Executes a task through Layer 2 ModelRouter and AgentScope Agent.reply().
-        Converts response to structured AgentResult with ModelExecutionResult details.
+        Executes a task through Layer 2 ModelRouter and Layer 3 ContextBuilder.
+        Converts response to structured AgentResult and persists turn to memory.
         """
+        # Record user prompt in session memory
+        if task.session_id and self.context_builder.session_manager:
+            self.context_builder.session_manager.add_turn(
+                session_id=task.session_id,
+                role="user",
+                content=task.prompt,
+            )
+
         user_msg = self.convert_task_to_msg(task)
 
         async def _invoke_model_spec(spec: ModelSpec) -> str:
@@ -83,6 +102,25 @@ class AgentScopeAdapter:
             task=task,
             executor_fn=_invoke_model_spec,
         )
+
+        # Record agent output in session memory and long-term memory
+        if task.session_id and self.context_builder.session_manager:
+            self.context_builder.session_manager.add_turn(
+                session_id=task.session_id,
+                role="agent",
+                content=exec_result.output,
+            )
+
+        if self.context_builder.long_term_memory:
+            turn_id = f"mem-{task.task_id}"
+            self.context_builder.long_term_memory.store_memory(
+                MemoryItem(
+                    id=turn_id,
+                    content=f"User: {task.prompt} | Agent: {exec_result.output}",
+                    memory_type=MemoryType.CONVERSATION,
+                    session_id=task.session_id,
+                )
+            )
 
         return AgentResult(
             task_id=task.task_id,

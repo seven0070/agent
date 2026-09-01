@@ -46,7 +46,7 @@ def test_c_message_conversion() -> None:
     msg: Msg = adapter.convert_task_to_msg(task)
     assert msg.role == "user"
     assert msg.name == "user"
-    assert msg.get_text_content() == "Hello AgentScope!"
+    assert "Hello AgentScope!" in msg.get_text_content()
 
 @pytest.mark.asyncio
 async def test_d_agent_execution() -> None:
@@ -80,7 +80,6 @@ def test_e_cli_smoke_execution(monkeypatch, capsys) -> None:
     captured = capsys.readouterr()
     assert "--- AGENT RESULT ---" in captured.out
 
-    # Extract JSON string following '--- AGENT RESULT ---'
     result_section = captured.out.split("--- AGENT RESULT ---")[1]
     json_start = result_section.find("{")
     json_end = result_section.rfind("}") + 1

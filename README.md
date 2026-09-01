@@ -1,4 +1,4 @@
-# Self-Evolving AI Agent — Layer 1 (AgentScope Core)
+# Self-Evolving AI Agent — Layer 3 (Memory & Knowledge)
 
 This repository contains the foundational architecture for a local-first, self-evolving AI agent system.
 
@@ -11,9 +11,9 @@ LAYER 0 — FOUNDATION (Implemented)
         ↓
 LAYER 1 — AGENT CORE (Implemented — AgentScope 2.x Core Adapter)
         ↓
-LAYER 2 — INTELLIGENCE / MODELS (Planned)
+LAYER 2 — INTELLIGENCE / MODELS (Implemented — ModelRouter & Fallback Engine)
         ↓
-LAYER 3 — MEMORY / RAG (Planned)
+LAYER 3 — MEMORY / KNOWLEDGE (Implemented — SQLite Long-Term Memory & RAG Engine)
         ↓
 LAYER 4 — TOOLS / SKILLS / MCP (Planned)
         ↓
@@ -40,10 +40,10 @@ python -m pip install -e .[dev]
 
 ### Running the Agent CLI
 
-Execute tasks via the CLI entrypoint:
+Execute tasks with optional persistent session history:
 
 ```bash
-python -m agent "Explain what this project does."
+python -m agent --session my-session-1 "Explain what this project does."
 ```
 
 ### Running Tests
@@ -60,4 +60,10 @@ python scripts/verify_layer0.py
 
 # Verify Layer 1 AgentScope Core
 python scripts/verify_layer1.py
+
+# Verify Layer 2 Intelligence/Models
+python scripts/verify_layer2.py
+
+# Verify Layer 3 Memory & Knowledge
+python scripts/verify_layer3.py
 ```
