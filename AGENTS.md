@@ -14,7 +14,7 @@ The system is built strictly layer-by-layer:
 - **LAYER 2 — INTELLIGENCE / MODELS (Implemented)**: Provider-agnostic model abstraction, ModelSpec registry, secure credential handling, deterministic router, health status tracking, fallback engine, local model readiness.
 - **LAYER 3 — MEMORY / KNOWLEDGE (Implemented)**: Ephemeral session working memory, persistent SQLite long-term storage, embedding interface, document RAG engine, bounded context builder, secret scrubbing.
 - **LAYER 4 — TOOLS / SKILLS / MCP (Implemented)**: CapabilityBroker, ToolPermissionPolicy (ALLOW, REQUIRE_APPROVAL, DENY), versioned ToolRegistry, calculator tool, workspace path-traversal prevention, BasicFileManagementSkill, MCPClientWrapper.
-- **LAYER 5 — PLANNING / ORCHESTRATION (Planned)**: Dynamic planner, multi-agent workflow orchestration.
+- **LAYER 5 — PLANNING / ORCHESTRATION (Implemented)**: RuleBasedPlanner, versioned Plan DAGs (`plan-v1`), TaskState machine (`PENDING`, `READY`, `RUNNING`, `SUCCEEDED`, `FAILED`), PlanOrchestrator, task retries, replanning (`plan-v1` -> `plan-v2`), structured `OrchestrationEvent`s.
 - **LAYER 6 — JCODE CODING ENGINE (Planned)**: Specialized coding subsystem for repository analysis, editing, and local verifications.
 - **LAYER 7 — RUNTIME / SANDBOX (Planned)**: Controlled sandboxed execution environment.
 - **LAYER 8 — EVALUATION / VERIFICATION (Planned)**: Benchmark execution, regression checks, safety evaluations.
@@ -46,18 +46,23 @@ The system is built strictly layer-by-layer:
 - Tool requests must pass through `CapabilityBroker` permission policy checks (`ALLOW`, `REQUIRE_APPROVAL`, `DENY`).
 - Filesystem tools must enforce workspace root isolation and path-traversal prevention.
 
-### F. Evolution Controller Separation
+### F. Orchestration & Planning Boundaries (Layer 5)
+- All plan tasks requiring tool capability execution MUST pass through `CapabilityBroker.execute_tool()`.
+- Plan dependency graphs must be validated against cycles using DFS cycle detection before execution.
+- Plans and task failures must be versioned (`plan-v1` -> `plan-v2`) with failure rationale preserved for future evaluation.
+
+### G. Evolution Controller Separation
 - The **Evolution Controller** is **NOT** an internal execution layer within the agent.
 - It operates as an external control plane beside the agent.
 - Agent performs tasks; Evolution Controller observes, evaluates, and governs version candidate promotion or rollback.
 
-### G. Component Versioning Policy
-- All evolvable components (tools, skills, memory strategies, planners) must be explicitly versioned (e.g. `calculator-v1`, `memory-v1`).
+### H. Component Versioning Policy
+- All evolvable components (plans, tools, skills, memory strategies, planners) must be explicitly versioned (e.g. `plan-v1`, `calculator-v1`, `memory-v1`).
 - Mutations must generate new versioned candidates rather than overwriting existing source files directly.
 
 ## 4. Engineering & Testing Practices
 - Use `pytest` for unit and integration tests (`PYTHONPATH=src pytest`).
-- Execute layer verification tools (`python scripts/verify_layer4.py`).
+- Execute layer verification tools (`python scripts/verify_layer5.py`).
 - Maintain minimal dependencies specified in `pyproject.toml`.
 - All tests must run non-interactively without requiring external cloud services or long-running daemons.
 - Never commit secrets, API keys, or private tokens.

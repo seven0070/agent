@@ -10,7 +10,7 @@ This document defines the scope, responsibilities, and current status of each la
 | **Layer 2** | Intelligence / Models | Model adapters, LLM routing, token management, model failovers, ModelRouter. | **IMPLEMENTED** |
 | **Layer 3** | Memory / Knowledge | Session working memory, persistent SQLite long-term storage, embedding interface, RAG engine, ContextBuilder. | **IMPLEMENTED** |
 | **Layer 4** | Tools / Skills / MCP | CapabilityBroker, ToolPermissionPolicy, calculator, workspace file I/O tools, path traversal safeguards, BasicFileManagementSkill, MCPClientWrapper. | **IMPLEMENTED** |
-| **Layer 5** | Planning / Orchestration | Multi-step reasoning planners, reactive execution graphs, multi-agent teams. | PLANNED |
+| **Layer 5** | Planning / Orchestration | RuleBasedPlanner, versioned Plan DAG, TaskState machine, PlanOrchestrator, retries, replanning (plan-v1 -> plan-v2), OrchestrationEvents. | **IMPLEMENTED** |
 | **Layer 6** | Jcode Coding Engine | Specialized coding agent subsystem for software tasks (read, edit, run tests). | PLANNED |
 | **Layer 7** | Runtime / Sandbox | Process isolation, environment containerization, filesystem/network permission control. | PLANNED |
 | **Layer 8** | Evaluation / Verification | Automated benchmark execution, safety regression tests, fitness metrics. | PLANNED |

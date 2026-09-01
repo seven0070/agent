@@ -1,4 +1,4 @@
-# Self-Evolving AI Agent — Layer 4 (Tools / Skills / MCP)
+# Self-Evolving AI Agent — Layer 5 (Planning / Orchestration)
 
 This repository contains the foundational architecture for a local-first, self-evolving AI agent system.
 
@@ -17,7 +17,7 @@ LAYER 3 — MEMORY / KNOWLEDGE (Implemented — SQLite Long-Term Memory & RAG En
         ↓
 LAYER 4 — TOOLS / SKILLS / MCP (Implemented — CapabilityBroker & Permission Policies)
         ↓
-LAYER 5 — PLANNING / ORCHESTRATION (Planned)
+LAYER 5 — PLANNING / ORCHESTRATION (Implemented — RuleBasedPlanner & PlanOrchestrator DAG Engine)
         ↓
 LAYER 6 — JCODE CODING ENGINE (Planned)
         ↓
@@ -40,10 +40,10 @@ python -m pip install -e .[dev]
 
 ### Running the Agent CLI
 
-Execute tasks with tool capabilities and persistent session history:
+Execute complex multi-step goals with tool capabilities and persistent session history:
 
 ```bash
-python -m agent --session my-session-1 "Calculate 37 * 42"
+python -m agent --session my-session-1 "Calculate 37 * 42 and save to calc_result.txt"
 ```
 
 ### Running Tests
@@ -69,4 +69,7 @@ python scripts/verify_layer3.py
 
 # Verify Layer 4 Tools/Skills/MCP
 python scripts/verify_layer4.py
+
+# Verify Layer 5 Planning/Orchestration
+python scripts/verify_layer5.py
 ```

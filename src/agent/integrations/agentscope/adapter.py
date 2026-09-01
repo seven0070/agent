@@ -1,7 +1,7 @@
 """
 AgentScope 2.x Adapter Implementation.
 Maps application domain models (AgentTask, AgentResult) to AgentScope 2.x abstractions.
-Integrated with Layer 2 ModelRouter, Layer 3 ContextBuilder, and Layer 4 CapabilityBroker.
+Integrated with Layer 2 ModelRouter, Layer 3 ContextBuilder, Layer 4 CapabilityBroker, and Layer 5 PlanOrchestrator.
 """
 
 from typing import Any, Dict, List, Optional
@@ -19,11 +19,13 @@ from agent.memory.sqlite import SQLiteMemoryBackend
 from agent.memory.models import MemoryItem, MemoryType
 from agent.capabilities.broker import CapabilityBroker
 from agent.capabilities.models import CapabilityResult
+from agent.orchestration.planner import RuleBasedPlanner
+from agent.orchestration.orchestrator import PlanOrchestrator
 
 class AgentScopeAdapter:
     """
     Adapter decoupling application domain from AgentScope 2.x engine internals.
-    Uses Layer 2 ModelRouter, Layer 3 ContextBuilder, and Layer 4 CapabilityBroker.
+    Integrates Layer 2 Router, Layer 3 Context, Layer 4 Broker, and Layer 5 Orchestration.
     """
 
     def __init__(
@@ -33,6 +35,8 @@ class AgentScopeAdapter:
         router: Optional[ModelRouter] = None,
         context_builder: Optional[ContextBuilder] = None,
         broker: Optional[CapabilityBroker] = None,
+        planner: Optional[RuleBasedPlanner] = None,
+        orchestrator: Optional[PlanOrchestrator] = None,
         model: Optional[ChatModelBase] = None,
         model_config_info: Optional[ModelConfigInfo] = None,
     ) -> None:
@@ -44,14 +48,14 @@ class AgentScopeAdapter:
             long_term_memory=SQLiteMemoryBackend(),
         )
         self.broker = broker or CapabilityBroker()
+        self.planner = planner or RuleBasedPlanner()
+        self.orchestrator = orchestrator or PlanOrchestrator(broker=self.broker)
         self.model_config_info = model_config_info or ModelConfigInfo()
 
-        # Build AgentScope Toolkit wrapping CapabilityBroker tools
         self.toolkit = self._build_toolkit()
 
-        # Backward compatibility support if direct model instance is passed
         if model is not None:
-            mock_name = getattr(model, "model_name", "custom-model")
+            mock_name = getattr(model, "model_name", "custom-override")
             spec = ModelSpec(
                 id="custom-override",
                 provider="mock",
@@ -106,10 +110,9 @@ class AgentScopeAdapter:
 
     async def execute(self, task: AgentTask) -> AgentResult:
         """
-        Executes a task through Layer 2 ModelRouter, Layer 3 ContextBuilder, and Layer 4 Toolkit.
+        Executes a task through Layer 5 PlanOrchestrator or Layer 2 ModelRouter.
         Converts response to structured AgentResult and persists turn to memory.
         """
-        # Record user prompt in session memory
         if task.session_id and self.context_builder.session_manager:
             self.context_builder.session_manager.add_turn(
                 session_id=task.session_id,
@@ -117,25 +120,40 @@ class AgentScopeAdapter:
                 content=task.prompt,
             )
 
-        user_msg = self.convert_task_to_msg(task)
+        plan = self.planner.create_plan(goal=task.prompt)
 
-        async def _invoke_model_spec(spec: ModelSpec) -> str:
-            chat_model = self.router.factory.create_model(spec)
-            agentscope_agent = Agent(
-                name=self.name,
-                system_prompt=self.system_prompt,
-                model=chat_model,
-                toolkit=self.toolkit,
+        has_tool_tasks = any(t.required_tool_id is not None for t in plan.tasks.values())
+        if has_tool_tasks:
+            completed_plan = self.orchestrator.execute_plan(plan)
+            outputs_summary = [f"{tid}: {t.outputs}" for tid, t in completed_plan.tasks.items()]
+            final_output = "\n".join(outputs_summary)
+
+            exec_result = ModelExecutionResult(
+                model_id="orchestrator",
+                provider="orchestration",
+                output=final_output,
+                status=completed_plan.status,
+                is_fallback=False,
             )
-            reply_msg: Msg = await agentscope_agent.reply(inputs=user_msg)
-            return reply_msg.get_text_content() if reply_msg else ""
+        else:
+            user_msg = self.convert_task_to_msg(task)
 
-        exec_result: ModelExecutionResult = await self.router.execute_with_fallback(
-            task=task,
-            executor_fn=_invoke_model_spec,
-        )
+            async def _invoke_model_spec(spec: ModelSpec) -> str:
+                chat_model = self.router.factory.create_model(spec)
+                agentscope_agent = Agent(
+                    name=self.name,
+                    system_prompt=self.system_prompt,
+                    model=chat_model,
+                    toolkit=self.toolkit,
+                )
+                reply_msg: Msg = await agentscope_agent.reply(inputs=user_msg)
+                return reply_msg.get_text_content() if reply_msg else ""
 
-        # Record agent output in session memory and long-term memory
+            exec_result = await self.router.execute_with_fallback(
+                task=task,
+                executor_fn=_invoke_model_spec,
+            )
+
         if task.session_id and self.context_builder.session_manager:
             self.context_builder.session_manager.add_turn(
                 session_id=task.session_id,
@@ -164,6 +182,8 @@ class AgentScopeAdapter:
             metadata={
                 "agentscope_agent_name": self.name,
                 "session_id": task.session_id,
-                "is_fallback": exec_result.is_fallback,
+                "plan_id": plan.id,
+                "plan_version": plan.version,
+                "is_fallback": getattr(exec_result, "is_fallback", False),
             },
         )

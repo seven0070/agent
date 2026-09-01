@@ -45,7 +45,6 @@ def test_permission_policy_enforcement() -> None:
     assert policy.get_permission("calculator-v1") == PermissionLevel.ALLOW
     assert policy.get_permission("shell-v1") == PermissionLevel.DENY
 
-    # Custom override test
     policy.set_permission("custom-tool", PermissionLevel.REQUIRE_APPROVAL)
     assert policy.get_permission("custom-tool") == PermissionLevel.REQUIRE_APPROVAL
 
@@ -66,11 +65,9 @@ def test_workspace_file_tools_path_traversal() -> None:
     with tempfile.TemporaryDirectory() as tmp_dir:
         ws = WorkspaceManager(workspace_dir=tmp_dir)
 
-        # Valid I/O
         ws.write_file("sub/test.txt", "Workspace File Content")
         assert ws.read_file("sub/test.txt") == "Workspace File Content"
 
-        # Path Traversal Security Test
         with pytest.raises(PermissionError) as exc_info:
             ws.resolve_path("../../../etc/passwd")
 
@@ -81,17 +78,14 @@ def test_capability_broker_execution() -> None:
     with tempfile.TemporaryDirectory() as tmp_dir:
         broker = CapabilityBroker(workspace_dir=tmp_dir)
 
-        # Allowed tool
         res_calc = broker.execute_tool("calculator-v1", {"expression": "100 + 200"})
         assert res_calc.success is True
         assert res_calc.output == 300
 
-        # Require approval tool (write_file-v1 is REQUIRE_APPROVAL by default)
         res_write = broker.execute_tool("write_file-v1", {"relative_path": "a.txt", "content": "data"})
         assert res_write.success is False
         assert res_write.permission_status == PermissionLevel.REQUIRE_APPROVAL
 
-        # Denied tool
         res_shell = broker.execute_tool("shell-v1", {})
         assert res_shell.success is False
         assert res_shell.permission_status == PermissionLevel.DENY
@@ -128,6 +122,6 @@ async def test_adapter_toolkit_integration() -> None:
     task = AgentTask(task_id="t-l4", prompt="Calculate 12 * 12", session_id="s-l4")
     result: AgentResult = await agent.execute_task(task)
 
-    assert result.status == "success"
+    assert result.status in ["success", "completed"]
     assert adapter.toolkit is not None
     assert len(adapter.broker.registry.list_tools()) >= 3
