@@ -13,7 +13,7 @@ The system is built strictly layer-by-layer:
 - **LAYER 1 — AGENT CORE (Implemented)**: Base AgentScope 2.x runtime integration, session lifecycle, message schema, agent-v1.
 - **LAYER 2 — INTELLIGENCE / MODELS (Implemented)**: Provider-agnostic model abstraction, ModelSpec registry, secure credential handling, deterministic router, health status tracking, fallback engine, local model readiness.
 - **LAYER 3 — MEMORY / KNOWLEDGE (Implemented)**: Ephemeral session working memory, persistent SQLite long-term storage, embedding interface, document RAG engine, bounded context builder, secret scrubbing.
-- **LAYER 4 — TOOLS / SKILLS / MCP (Planned)**: Tool execution registry, skill management, MCP integration.
+- **LAYER 4 — TOOLS / SKILLS / MCP (Implemented)**: CapabilityBroker, ToolPermissionPolicy (ALLOW, REQUIRE_APPROVAL, DENY), versioned ToolRegistry, calculator tool, workspace path-traversal prevention, BasicFileManagementSkill, MCPClientWrapper.
 - **LAYER 5 — PLANNING / ORCHESTRATION (Planned)**: Dynamic planner, multi-agent workflow orchestration.
 - **LAYER 6 — JCODE CODING ENGINE (Planned)**: Specialized coding subsystem for repository analysis, editing, and local verifications.
 - **LAYER 7 — RUNTIME / SANDBOX (Planned)**: Controlled sandboxed execution environment.
@@ -41,18 +41,23 @@ The system is built strictly layer-by-layer:
 - API keys, tokens, or private credentials must **NEVER** be stored as plain-text memory entries.
 - Scrubbing and deletion APIs (`delete_memory`, `delete_session`) must be provided at the memory abstraction level.
 
-### E. Evolution Controller Separation
+### E. Capability Broker & Permission Boundary (Layer 4)
+- Unrestricted shell execution, arbitrary process spawning, package installation, network access, and system administration are strictly **PROHIBITED** without sandbox isolation.
+- Tool requests must pass through `CapabilityBroker` permission policy checks (`ALLOW`, `REQUIRE_APPROVAL`, `DENY`).
+- Filesystem tools must enforce workspace root isolation and path-traversal prevention.
+
+### F. Evolution Controller Separation
 - The **Evolution Controller** is **NOT** an internal execution layer within the agent.
 - It operates as an external control plane beside the agent.
 - Agent performs tasks; Evolution Controller observes, evaluates, and governs version candidate promotion or rollback.
 
-### F. Component Versioning Policy
-- All evolvable components (planners, memory strategies, skills, tools) must be explicitly versioned (e.g. `memory-v1`, `planner-v1`).
+### G. Component Versioning Policy
+- All evolvable components (tools, skills, memory strategies, planners) must be explicitly versioned (e.g. `calculator-v1`, `memory-v1`).
 - Mutations must generate new versioned candidates rather than overwriting existing source files directly.
 
 ## 4. Engineering & Testing Practices
 - Use `pytest` for unit and integration tests (`PYTHONPATH=src pytest`).
-- Execute layer verification tools (`python scripts/verify_layer3.py`).
+- Execute layer verification tools (`python scripts/verify_layer4.py`).
 - Maintain minimal dependencies specified in `pyproject.toml`.
 - All tests must run non-interactively without requiring external cloud services or long-running daemons.
 - Never commit secrets, API keys, or private tokens.

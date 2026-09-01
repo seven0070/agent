@@ -1,5 +1,5 @@
 """
-CLI Entrypoint for Self-Evolving Agent Framework (Layer 3 Memory & Knowledge).
+CLI Entrypoint for Self-Evolving Agent Framework (Layer 4 Tools / Skills / MCP).
 """
 
 import sys
@@ -13,6 +13,7 @@ from agent.core import AgentTask, AgentV1
 from agent.integrations.agentscope import AgentScopeAdapter
 from agent.models import ModelRouter
 from agent.memory import ContextBuilder, SessionMemoryManager, SQLiteMemoryBackend
+from agent.capabilities import CapabilityBroker, PermissionLevel
 
 async def run_agent_cli(prompt: str, session_id: str) -> None:
     settings = get_settings()
@@ -27,19 +28,28 @@ async def run_agent_cli(prompt: str, session_id: str) -> None:
         component_version="agent-v1",
     )
 
-    logger.info("Initializing AgentSystem with Layer 3 Memory Context", extra={"event_type": "startup"})
+    logger.info("Initializing AgentSystem with Layer 4 CapabilityBroker", extra={"event_type": "startup"})
 
     # Layer -1 Constitutional Validation
     guard = ConstitutionalGuard()
     guard.validate_action({"type": "execute_task", "target": "agent_core"})
 
-    # Layer 3 Memory ContextBuilder & Adapter Initialization
+    # Layer 4 CapabilityBroker & Adapter Initialization
+    broker = CapabilityBroker()
+    # Explicitly ALLOW file writing for workspace tasks
+    broker.permission_policy.set_permission("write_file-v1", PermissionLevel.ALLOW)
+
     context_builder = ContextBuilder(
         session_manager=SessionMemoryManager(),
         long_term_memory=SQLiteMemoryBackend(),
     )
     router = ModelRouter()
-    adapter = AgentScopeAdapter(name="agent-v1-cli", router=router, context_builder=context_builder)
+    adapter = AgentScopeAdapter(
+        name="agent-v1-cli",
+        router=router,
+        context_builder=context_builder,
+        broker=broker,
+    )
     agent = AgentV1(adapter=adapter)
 
     task = AgentTask(
@@ -58,7 +68,7 @@ async def run_agent_cli(prompt: str, session_id: str) -> None:
 def main() -> None:
     args: List[str] = sys.argv[1:]
     session_id = f"session-{uuid.uuid4().hex[:8]}"
-    prompt = "Explain what this project does."
+    prompt = "Calculate 37 * 42"
 
     if args:
         if args[0] == "--session" and len(args) > 2:

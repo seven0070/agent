@@ -1,13 +1,14 @@
 """
 AgentScope 2.x Adapter Implementation.
 Maps application domain models (AgentTask, AgentResult) to AgentScope 2.x abstractions.
-Integrated with Layer 2 ModelRouter and Layer 3 ContextBuilder for memory context.
+Integrated with Layer 2 ModelRouter, Layer 3 ContextBuilder, and Layer 4 CapabilityBroker.
 """
 
 from typing import Any, Dict, List, Optional
 from agentscope.agent import Agent
 from agentscope.model import ChatModelBase
 from agentscope.message import Msg, UserMsg
+from agentscope.tool import Toolkit, FunctionTool
 from agent.core.models import AgentTask, AgentResult, ModelConfigInfo, ModelExecutionResult
 from agent.models.router import ModelRouter
 from agent.models.spec import ModelSpec
@@ -16,11 +17,13 @@ from agent.memory.context import ContextBuilder
 from agent.memory.session import SessionMemoryManager
 from agent.memory.sqlite import SQLiteMemoryBackend
 from agent.memory.models import MemoryItem, MemoryType
+from agent.capabilities.broker import CapabilityBroker
+from agent.capabilities.models import CapabilityResult
 
 class AgentScopeAdapter:
     """
     Adapter decoupling application domain from AgentScope 2.x engine internals.
-    Uses Layer 2 ModelRouter for provider management and Layer 3 ContextBuilder for memory context.
+    Uses Layer 2 ModelRouter, Layer 3 ContextBuilder, and Layer 4 CapabilityBroker.
     """
 
     def __init__(
@@ -29,6 +32,7 @@ class AgentScopeAdapter:
         system_prompt: str = "You are a helpful AI assistant.",
         router: Optional[ModelRouter] = None,
         context_builder: Optional[ContextBuilder] = None,
+        broker: Optional[CapabilityBroker] = None,
         model: Optional[ChatModelBase] = None,
         model_config_info: Optional[ModelConfigInfo] = None,
     ) -> None:
@@ -39,7 +43,11 @@ class AgentScopeAdapter:
             session_manager=SessionMemoryManager(),
             long_term_memory=SQLiteMemoryBackend(),
         )
+        self.broker = broker or CapabilityBroker()
         self.model_config_info = model_config_info or ModelConfigInfo()
+
+        # Build AgentScope Toolkit wrapping CapabilityBroker tools
+        self.toolkit = self._build_toolkit()
 
         # Backward compatibility support if direct model instance is passed
         if model is not None:
@@ -63,7 +71,30 @@ class AgentScopeAdapter:
             name=self.name,
             system_prompt=self.system_prompt,
             model=init_model,
+            toolkit=self.toolkit,
         )
+
+    def _build_toolkit(self) -> Toolkit:
+        """Converts registered ToolSpec items into AgentScope FunctionTool instances."""
+        tools_list = []
+        for spec in self.broker.registry.list_tools():
+            tool_id = spec.id
+            def _make_func(tid: str):
+                def _tool_func(**kwargs: Any) -> str:
+                    res: CapabilityResult = self.broker.execute_tool(tid, kwargs)
+                    if res.success:
+                        return str(res.output)
+                    return f"Error ({res.permission_status.value}): {res.error}"
+                return _tool_func
+
+            func_tool = FunctionTool(
+                func=_make_func(tool_id),
+                name=spec.name,
+                description=spec.description,
+            )
+            tools_list.append(func_tool)
+
+        return Toolkit(tools=tools_list)
 
     def convert_task_to_msg(self, task: AgentTask) -> Msg:
         """Converts application AgentTask to AgentScope UserMsg with ContextBuilder prompt."""
@@ -75,7 +106,7 @@ class AgentScopeAdapter:
 
     async def execute(self, task: AgentTask) -> AgentResult:
         """
-        Executes a task through Layer 2 ModelRouter and Layer 3 ContextBuilder.
+        Executes a task through Layer 2 ModelRouter, Layer 3 ContextBuilder, and Layer 4 Toolkit.
         Converts response to structured AgentResult and persists turn to memory.
         """
         # Record user prompt in session memory
@@ -94,6 +125,7 @@ class AgentScopeAdapter:
                 name=self.name,
                 system_prompt=self.system_prompt,
                 model=chat_model,
+                toolkit=self.toolkit,
             )
             reply_msg: Msg = await agentscope_agent.reply(inputs=user_msg)
             return reply_msg.get_text_content() if reply_msg else ""

@@ -1,4 +1,4 @@
-# Self-Evolving AI Agent — Layer 3 (Memory & Knowledge)
+# Self-Evolving AI Agent — Layer 4 (Tools / Skills / MCP)
 
 This repository contains the foundational architecture for a local-first, self-evolving AI agent system.
 
@@ -15,7 +15,7 @@ LAYER 2 — INTELLIGENCE / MODELS (Implemented — ModelRouter & Fallback Engine
         ↓
 LAYER 3 — MEMORY / KNOWLEDGE (Implemented — SQLite Long-Term Memory & RAG Engine)
         ↓
-LAYER 4 — TOOLS / SKILLS / MCP (Planned)
+LAYER 4 — TOOLS / SKILLS / MCP (Implemented — CapabilityBroker & Permission Policies)
         ↓
 LAYER 5 — PLANNING / ORCHESTRATION (Planned)
         ↓
@@ -40,10 +40,10 @@ python -m pip install -e .[dev]
 
 ### Running the Agent CLI
 
-Execute tasks with optional persistent session history:
+Execute tasks with tool capabilities and persistent session history:
 
 ```bash
-python -m agent --session my-session-1 "Explain what this project does."
+python -m agent --session my-session-1 "Calculate 37 * 42"
 ```
 
 ### Running Tests
@@ -66,4 +66,7 @@ python scripts/verify_layer2.py
 
 # Verify Layer 3 Memory & Knowledge
 python scripts/verify_layer3.py
+
+# Verify Layer 4 Tools/Skills/MCP
+python scripts/verify_layer4.py
 ```
