@@ -17,7 +17,7 @@ The system is built strictly layer-by-layer:
 - **LAYER 5 — PLANNING / ORCHESTRATION (Implemented)**: RuleBasedPlanner, versioned Plan DAGs (`plan-v1`), TaskState machine (`PENDING`, `READY`, `RUNNING`, `SUCCEEDED`, `FAILED`), PlanOrchestrator, task retries, replanning (`plan-v1` -> `plan-v2`), structured `OrchestrationEvent`s.
 - **LAYER 6 — JCODE CODING ENGINE (Implemented)**: `JcodeAdapter` (`@1jehuang/jcode-sdk` v1.1.0 harness protocol), `CodingTask`, `CodingResult`, `CodingWorkspaceRestrictor` path restriction, `JcodePermissionInterceptor`, `JcodeBridge`, `coding-engine-v1` tool wrapper.
 - **LAYER 7 — RUNTIME / SANDBOX (Implemented)**: `LocalAgentScopeRuntime`, `RuntimeSession` lifecycle, `RuntimeSandbox` process controls, workspace path traversal guards, `ResourceLimits` (timeouts, output caps), `NetworkPolicy` (`DENY`, `ALLOWLIST`), structured `RuntimeEvent` audit stream.
-- **LAYER 8 — EVALUATION / VERIFICATION (Planned)**: Benchmark execution, regression checks, safety evaluations.
+- **LAYER 8 — EVALUATION / VERIFICATION (Implemented)**: `DeterministicEvaluator` (tool, coding, planning, safety categories), `MetricDimensions` (unaggregated scores + derived composite), `EvaluationThresholds`, `BaselineStore`, `RegressionComparator` (`IMPROVED`, `REGRESSED`), `EvaluationRunner` sandboxed execution, `EvaluationReport` (`PASS`, `FAIL`, `REVIEW`).
 - **LAYER 9 — EVOLUTION CONTROL PLANE (Planned)**: Independent control plane observing agent runs, generating candidates, testing mutations, managing rollbacks/promotions.
 - **LAYER 10 — UI / DESKTOP (Planned)**: Desktop user interface for Windows.
 
@@ -61,18 +61,23 @@ The system is built strictly layer-by-layer:
 - Path traversal outside sandbox workspace root (`data/workspace`) is strictly **PROHIBITED**.
 - Runtime sessions must be properly closed and cleaned up to prevent orphaned processes or handles.
 
-### I. Evolution Controller Separation
+### I. Evaluation & Security Boundary (Layer 8)
+- Evaluated candidates run inside restricted `RuntimeSandbox` environments and have **READ-ONLY** access.
+- Evaluated candidates CANNOT modify evaluation datasets, baselines, promotion thresholds, or report recommendations.
+- Raw metric dimensions (`correctness`, `safety`, `reliability`, `latency`) must remain unaggregated alongside composite scores.
+
+### J. Evolution Controller Separation
 - The **Evolution Controller** is **NOT** an internal execution layer within the agent.
 - It operates as an external control plane beside the agent.
 - Agent performs tasks; Evolution Controller observes, evaluates, and governs version candidate promotion or rollback.
 
-### J. Component Versioning Policy
-- All evolvable components (plans, coding engines, tools, skills, memory strategies, planners) must be explicitly versioned (e.g. `coding-engine-v1`, `plan-v1`, `calculator-v1`, `memory-v1`).
+### K. Component Versioning Policy
+- All evolvable components (plans, coding engines, tools, skills, memory strategies, planners) must be explicitly versioned (e.g. `eval-run-001`, `benchmark-v1`, `coding-engine-v1`, `plan-v1`).
 - Mutations must generate new versioned candidates rather than overwriting existing source files directly.
 
 ## 4. Engineering & Testing Practices
 - Use `pytest` for unit and integration tests (`PYTHONPATH=src pytest`).
-- Execute layer verification tools (`python scripts/verify_layer7.py`).
+- Execute layer verification tools (`python scripts/verify_layer8.py`).
 - Maintain minimal dependencies specified in `pyproject.toml`.
 - All tests must run non-interactively without requiring external cloud services or long-running daemons.
 - Never commit secrets, API keys, or private tokens.

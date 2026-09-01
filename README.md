@@ -1,4 +1,4 @@
-# Self-Evolving AI Agent — Layer 7 (Runtime / Sandbox)
+# Self-Evolving AI Agent — Layer 8 (Evaluation / Verification Engine)
 
 This repository contains the foundational architecture for a local-first, self-evolving AI agent system.
 
@@ -23,7 +23,7 @@ LAYER 6 — JCODE CODING ENGINE (Implemented — JcodeAdapter @1jehuang/jcode-sd
         ↓
 LAYER 7 — RUNTIME / SANDBOX (Implemented — LocalAgentScopeRuntime & RuntimeSandbox Execution Engine)
         ↓
-LAYER 8 — EVALUATION / VERIFICATION (Planned)
+LAYER 8 — EVALUATION / VERIFICATION (Implemented — EvaluationRunner, RegressionComparator, Metrics & Baselines)
         ↓
 LAYER 9 — EVOLUTION CONTROL PLANE (Planned)
         ↓
@@ -78,4 +78,7 @@ python scripts/verify_layer6.py
 
 # Verify Layer 7 Runtime/Sandbox
 python scripts/verify_layer7.py
+
+# Verify Layer 8 Evaluation/Verification
+python scripts/verify_layer8.py
 ```
