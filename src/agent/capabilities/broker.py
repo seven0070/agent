@@ -10,6 +10,7 @@ from agent.capabilities.registry import ToolRegistry
 from agent.capabilities.spec import ToolSpec
 from agent.capabilities.tools.calculator import evaluate_math_expression
 from agent.capabilities.tools.workspace import WorkspaceManager
+from agent.capabilities.tools.coding import CodingEngineToolWrapper
 from agent.logging import get_logger
 
 logger = get_logger("agent.capabilities.broker")
@@ -28,6 +29,15 @@ class CapabilityBroker:
         self.registry = registry or ToolRegistry()
         self.permission_policy = permission_policy or ToolPermissionPolicy()
         self.workspace_manager = WorkspaceManager(workspace_dir=workspace_dir)
+
+        from agent.coding.jcode.adapter import JcodeAdapter
+        from agent.coding.permissions import JcodePermissionInterceptor
+
+        jcode_adapter = JcodeAdapter(
+            workspace_dir=workspace_dir,
+            permission_interceptor=JcodePermissionInterceptor(policy=self.permission_policy),
+        )
+        self.coding_tool_wrapper = CodingEngineToolWrapper(adapter=jcode_adapter)
         self._register_default_tools()
 
     def _register_default_tools(self) -> None:
@@ -57,6 +67,15 @@ class CapabilityBroker:
                 description="Writes file contents to the restricted workspace directory",
                 risk_level=ToolRiskLevel.MEDIUM,
                 input_schema={"type": "object", "properties": {"relative_path": {"type": "string"}, "content": {"type": "string"}}, "required": ["relative_path", "content"]},
+            )
+        )
+        self.registry.register_tool(
+            ToolSpec(
+                id="coding-engine-v1",
+                name="coding_engine",
+                description="Specialized Jcode coding engine for inspecting workspace, creating/editing code files, and running test suites",
+                risk_level=ToolRiskLevel.MEDIUM,
+                input_schema={"type": "object", "properties": {"goal": {"type": "string"}}, "required": ["goal"]},
             )
         )
 
@@ -128,6 +147,19 @@ class CapabilityBroker:
                     output=msg,
                     permission_status=PermissionLevel.ALLOW,
                     execution_time_ms=round(elapsed_ms, 2),
+                )
+
+            elif tool_id == "coding-engine-v1":
+                coding_res = self.coding_tool_wrapper.execute(kwargs)
+                elapsed_ms = (time.perf_counter() - start_time) * 1000
+                return CapabilityResult(
+                    tool_id=tool_id,
+                    success=(coding_res.status == "success"),
+                    output=coding_res.summary,
+                    error=str(coding_res.errors) if coding_res.errors else None,
+                    permission_status=PermissionLevel.ALLOW,
+                    execution_time_ms=round(elapsed_ms, 2),
+                    metadata={"files_changed": coding_res.files_changed, "tests_passed": coding_res.tests_passed},
                 )
 
             else:

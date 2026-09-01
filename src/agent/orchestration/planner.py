@@ -28,8 +28,19 @@ class RuleBasedPlanner:
 
         goal_lower = goal.lower()
 
-        # Goal Pattern 1: Math calculation + write to file
-        if ("calculate" in goal_lower or "math" in goal_lower or "compute" in goal_lower or any(c in goal for c in ["*", "+", "/", "-"])) and ("file" in goal_lower or "save" in goal_lower or "write" in goal_lower):
+        # Goal Pattern 1: Coding / Software Engineering Task
+        if any(keyword in goal_lower for keyword in ["code", "python module", "function", "edit file", "create test", "jcode"]):
+            t1 = PlanTask(
+                id="task_code_1",
+                description="Execute coding task with Jcode engine",
+                dependencies=[],
+                required_tool_id="coding-engine-v1",
+                inputs={"goal": goal},
+            )
+            tasks[t1.id] = t1
+
+        # Goal Pattern 2: Math calculation + write to file
+        elif ("calculate" in goal_lower or "math" in goal_lower or "compute" in goal_lower or any(c in goal for c in ["*", "+", "/", "-"])) and ("file" in goal_lower or "save" in goal_lower or "write" in goal_lower):
             expr = self._extract_expression(goal)
 
             t1 = PlanTask(
@@ -49,7 +60,7 @@ class RuleBasedPlanner:
             tasks[t1.id] = t1
             tasks[t2.id] = t2
 
-        # Goal Pattern 2: Math calculation only
+        # Goal Pattern 3: Math calculation only
         elif "calculate" in goal_lower or "math" in goal_lower or "compute" in goal_lower or any(c in goal for c in ["*", "+", "/", "-"]):
             expr = self._extract_expression(goal)
 
@@ -62,7 +73,7 @@ class RuleBasedPlanner:
             )
             tasks[t1.id] = t1
 
-        # Goal Pattern 3: Default single-step general task
+        # Goal Pattern 4: Default single-step general task
         else:
             t1 = PlanTask(
                 id="task_gen_1",

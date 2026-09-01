@@ -15,7 +15,7 @@ The system is built strictly layer-by-layer:
 - **LAYER 3 — MEMORY / KNOWLEDGE (Implemented)**: Ephemeral session working memory, persistent SQLite long-term storage, embedding interface, document RAG engine, bounded context builder, secret scrubbing.
 - **LAYER 4 — TOOLS / SKILLS / MCP (Implemented)**: CapabilityBroker, ToolPermissionPolicy (ALLOW, REQUIRE_APPROVAL, DENY), versioned ToolRegistry, calculator tool, workspace path-traversal prevention, BasicFileManagementSkill, MCPClientWrapper.
 - **LAYER 5 — PLANNING / ORCHESTRATION (Implemented)**: RuleBasedPlanner, versioned Plan DAGs (`plan-v1`), TaskState machine (`PENDING`, `READY`, `RUNNING`, `SUCCEEDED`, `FAILED`), PlanOrchestrator, task retries, replanning (`plan-v1` -> `plan-v2`), structured `OrchestrationEvent`s.
-- **LAYER 6 — JCODE CODING ENGINE (Planned)**: Specialized coding subsystem for repository analysis, editing, and local verifications.
+- **LAYER 6 — JCODE CODING ENGINE (Implemented)**: `JcodeAdapter` (`@1jehuang/jcode-sdk` v1.1.0 harness protocol), `CodingTask`, `CodingResult`, `CodingWorkspaceRestrictor` path restriction, `JcodePermissionInterceptor`, `JcodeBridge`, `coding-engine-v1` tool wrapper.
 - **LAYER 7 — RUNTIME / SANDBOX (Planned)**: Controlled sandboxed execution environment.
 - **LAYER 8 — EVALUATION / VERIFICATION (Planned)**: Benchmark execution, regression checks, safety evaluations.
 - **LAYER 9 — EVOLUTION CONTROL PLANE (Planned)**: Independent control plane observing agent runs, generating candidates, testing mutations, managing rollbacks/promotions.
@@ -51,18 +51,24 @@ The system is built strictly layer-by-layer:
 - Plan dependency graphs must be validated against cycles using DFS cycle detection before execution.
 - Plans and task failures must be versioned (`plan-v1` -> `plan-v2`) with failure rationale preserved for future evaluation.
 
-### G. Evolution Controller Separation
+### G. Jcode Coding Engine Boundaries (Layer 6)
+- Jcode is a specialized coding subsystem invoked by the Main Agent and does NOT replace the main AgentScope agent.
+- Jcode file operations and test executions MUST be restricted to the assigned workspace directory (`CodingWorkspaceRestrictor`).
+- Tool actions requested by Jcode must pass through `JcodePermissionInterceptor` and `ToolPermissionPolicy`.
+- Jcode must NOT modify constitutional invariants, security policies, or the Evolution Controller.
+
+### H. Evolution Controller Separation
 - The **Evolution Controller** is **NOT** an internal execution layer within the agent.
 - It operates as an external control plane beside the agent.
 - Agent performs tasks; Evolution Controller observes, evaluates, and governs version candidate promotion or rollback.
 
-### H. Component Versioning Policy
-- All evolvable components (plans, tools, skills, memory strategies, planners) must be explicitly versioned (e.g. `plan-v1`, `calculator-v1`, `memory-v1`).
+### I. Component Versioning Policy
+- All evolvable components (plans, coding engines, tools, skills, memory strategies, planners) must be explicitly versioned (e.g. `coding-engine-v1`, `plan-v1`, `calculator-v1`, `memory-v1`).
 - Mutations must generate new versioned candidates rather than overwriting existing source files directly.
 
 ## 4. Engineering & Testing Practices
 - Use `pytest` for unit and integration tests (`PYTHONPATH=src pytest`).
-- Execute layer verification tools (`python scripts/verify_layer5.py`).
+- Execute layer verification tools (`python scripts/verify_layer6.py`).
 - Maintain minimal dependencies specified in `pyproject.toml`.
 - All tests must run non-interactively without requiring external cloud services or long-running daemons.
 - Never commit secrets, API keys, or private tokens.

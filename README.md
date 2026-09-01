@@ -1,4 +1,4 @@
-# Self-Evolving AI Agent — Layer 5 (Planning / Orchestration)
+# Self-Evolving AI Agent — Layer 6 (Jcode Coding Engine)
 
 This repository contains the foundational architecture for a local-first, self-evolving AI agent system.
 
@@ -19,7 +19,7 @@ LAYER 4 — TOOLS / SKILLS / MCP (Implemented — CapabilityBroker & Permission 
         ↓
 LAYER 5 — PLANNING / ORCHESTRATION (Implemented — RuleBasedPlanner & PlanOrchestrator DAG Engine)
         ↓
-LAYER 6 — JCODE CODING ENGINE (Planned)
+LAYER 6 — JCODE CODING ENGINE (Implemented — JcodeAdapter @1jehuang/jcode-sdk Integration)
         ↓
 LAYER 7 — RUNTIME / SANDBOX (Planned)
         ↓
@@ -40,10 +40,10 @@ python -m pip install -e .[dev]
 
 ### Running the Agent CLI
 
-Execute complex multi-step goals with tool capabilities and persistent session history:
+Execute complex multi-step goals or software engineering tasks with tool capabilities and persistent session history:
 
 ```bash
-python -m agent --session my-session-1 "Calculate 37 * 42 and save to calc_result.txt"
+python -m agent --session my-session-1 "Create python module and test"
 ```
 
 ### Running Tests
@@ -72,4 +72,7 @@ python scripts/verify_layer4.py
 
 # Verify Layer 5 Planning/Orchestration
 python scripts/verify_layer5.py
+
+# Verify Layer 6 Jcode Coding Engine
+python scripts/verify_layer6.py
 ```
