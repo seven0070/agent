@@ -1,15 +1,15 @@
-# Self-Evolving AI Agent — Layer 0 (Foundation)
+# Self-Evolving AI Agent — Layer 1 (AgentScope Core)
 
 This repository contains the foundational architecture for a local-first, self-evolving AI agent system.
 
 ## Layer Architecture Overview
 
 ```text
-LAYER -1 — CONSTITUTION
+LAYER -1 — CONSTITUTION (Immutable Boundaries)
         ↓
-LAYER 0 — FOUNDATION (Current)
+LAYER 0 — FOUNDATION (Implemented)
         ↓
-LAYER 1 — AGENT CORE (Planned)
+LAYER 1 — AGENT CORE (Implemented — AgentScope 2.x Core Adapter)
         ↓
 LAYER 2 — INTELLIGENCE / MODELS (Planned)
         ↓
@@ -38,14 +38,26 @@ LAYER 10 — UI / DESKTOP (Planned)
 python -m pip install -e .[dev]
 ```
 
+### Running the Agent CLI
+
+Execute tasks via the CLI entrypoint:
+
+```bash
+python -m agent "Explain what this project does."
+```
+
 ### Running Tests
 
 ```bash
-pytest
+PYTHONPATH=src pytest
 ```
 
-### Layer 0 Verification
+### Layer Verification Scripts
 
 ```bash
+# Verify Layer 0 Foundation
 python scripts/verify_layer0.py
+
+# Verify Layer 1 AgentScope Core
+python scripts/verify_layer1.py
 ```

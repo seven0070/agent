@@ -6,7 +6,7 @@ This document defines the scope, responsibilities, and current status of each la
 |---|---|---|---|
 | **Layer -1** | Constitution | Immutable safety constraints, identity, audit integrity, and human approval rules. | DEFINED (Foundation Invariants) |
 | **Layer 0** | Foundation | Project structure, environment config, structured logging, component versioning specifications, verification suite. | **IMPLEMENTED** |
-| **Layer 1** | Agent Core | AgentScope agent lifecycle, base session management, message passing. | PLANNED |
+| **Layer 1** | Agent Core | AgentScope 2.x agent lifecycle, adapter boundary, session management, structured AgentResult, agent-v1. | **IMPLEMENTED** |
 | **Layer 2** | Intelligence / Models | Model adapters, LLM routing, token management, model failovers. | PLANNED |
 | **Layer 3** | Memory / RAG | Ephemeral context window management, long-term vector/graph memory, memory index. | PLANNED |
 | **Layer 4** | Tools / Skills / MCP | Executable tools, reusable skill library, Model Context Protocol (MCP) servers. | PLANNED |
