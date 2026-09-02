@@ -11,6 +11,19 @@ import {
 
 export const API_BASE = "http://127.0.0.1:8000/api";
 
+export async function createSession(title?: string): Promise<{ session_id: string; title: string }> {
+  const res = await fetch(`${API_BASE}/sessions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title }),
+  });
+  if (!res.ok) {
+    const sid = `sess-${Math.random().toString(36).substring(2, 10)}`;
+    return { session_id: sid, title: title || `Session ${sid.substring(5, 9)}` };
+  }
+  return res.json();
+}
+
 export async function fetchMissions(): Promise<AgentMission[]> {
   const res = await fetch(`${API_BASE}/sessions`);
   if (!res.ok) return [];

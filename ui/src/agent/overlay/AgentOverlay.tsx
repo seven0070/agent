@@ -41,7 +41,7 @@ export const AgentOverlay: React.FC = () => {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', background: 'rgba(2, 6, 23, 0.95)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', background: 'rgba(2, 6, 23, 0.95)', pointerEvents: 'auto' }}>
       {/* Header Bar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 20px', background: '#0f172a', borderBottom: '1px solid #334155' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
