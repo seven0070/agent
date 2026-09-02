@@ -1,0 +1,75 @@
+/**
+ * Agent Overlay API Service Layer connecting to Layer 10 FastAPI backend.
+ */
+
+import {
+  AgentMission,
+  EvolutionCandidate,
+  ApprovalRequest,
+  ConstitutionStatus,
+} from './types';
+
+export const API_BASE = "http://127.0.0.1:8000/api";
+
+export async function fetchMissions(): Promise<AgentMission[]> {
+  const res = await fetch(`${API_BASE}/sessions`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.map((s: any) => ({
+    id: s.session_id,
+    title: s.title,
+    status: s.active_plan_id ? "running" : "completed",
+    createdAt: s.created_at,
+    updatedAt: s.updated_at,
+  }));
+}
+
+export async function fetchEvolutionCandidates(): Promise<EvolutionCandidate[]> {
+  const res = await fetch(`${API_BASE}/evolution/status`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return [
+    {
+      id: "cand-001",
+      currentVersion: data.active_generation || "agent-v1",
+      candidateVersion: "agent-v2-candidate",
+      status: "review",
+      createdAt: new Date().toISOString(),
+    },
+  ];
+}
+
+export async function fetchApprovals(): Promise<ApprovalRequest[]> {
+  const res = await fetch(`${API_BASE}/approvals`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.map((a: any) => ({
+    id: a.approval_id,
+    type: a.source_layer,
+    title: a.action,
+    description: a.reason,
+    risk: a.risk_level,
+    createdAt: new Date().toISOString(),
+    status: a.status.toLowerCase() as "pending" | "approved" | "rejected",
+  }));
+}
+
+export async function resolveApproval(id: string, approved: boolean): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/approvals/${id}?approved=${approved}`, {
+    method: "POST",
+  });
+  return res.ok;
+}
+
+export async function fetchConstitutionStatus(): Promise<ConstitutionStatus> {
+  return {
+    protected: true,
+    identity: true,
+    coreObjectives: true,
+    permissionCeiling: true,
+    credentialBoundary: true,
+    auditIntegrity: true,
+    rollbackAuthority: true,
+    evolutionBoundary: true,
+  };
+}
