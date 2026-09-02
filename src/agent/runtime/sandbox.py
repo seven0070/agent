@@ -1,5 +1,6 @@
 """
 Runtime Sandbox Enforcing Workspace Path Restrictions, Process Limits, and Network Policies.
+Cross-platform Windows & POSIX canonical path resolution.
 """
 
 import os
@@ -21,7 +22,7 @@ class RuntimeSandbox:
 
     def __init__(self, session: RuntimeSession) -> None:
         self.session = session
-        self.workspace_dir = os.path.abspath(session.workspace_dir)
+        self.workspace_dir = os.path.realpath(os.path.abspath(session.workspace_dir))
         os.makedirs(self.workspace_dir, exist_ok=True)
         self.events: List[RuntimeEvent] = []
 
@@ -40,14 +41,16 @@ class RuntimeSandbox:
     def resolve_and_validate_path(self, relative_path: str) -> str:
         """
         Resolves path and enforces strict workspace root isolation.
+        Cross-platform Windows (drive letters, backslashes) & POSIX canonical resolution.
         Prevents path traversal attacks (e.g. '../', 'C:\\Windows', absolute escapes).
         """
         clean_path = relative_path.lstrip("/\\")
-        target_path = os.path.abspath(os.path.join(self.workspace_dir, clean_path))
+        target_path = os.path.realpath(os.path.abspath(os.path.join(self.workspace_dir, clean_path)))
 
         try:
             common = os.path.commonpath([self.workspace_dir, target_path])
         except ValueError:
+            # Raised on Windows when paths are on different drive letters (e.g. C: vs D:)
             self._emit_event("PERMISSION_DENIED", "path_validation", "denied", {"path": relative_path})
             raise PermissionError(f"Access Denied: Path '{relative_path}' escapes sandbox workspace root.")
 
