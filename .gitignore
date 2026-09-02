@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 *.so
 .Python
+env/
 build/
 develop-eggs/
 dist/
@@ -15,35 +16,39 @@ lib64/
 parts/
 sdist/
 var/
-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
 
 # Virtual environments
-venv/
-env/
-ENV/
 .venv/
+venv/
+ENV/
 
-# Environment and secrets
-.env
-.env.local
-*.pem
-*.key
-
-# IDEs and editors
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Testing and coverage
+# Testing & Coverage
 .pytest_cache/
 .coverage
 htmlcov/
+.tox/
 
-# Logs and runtime state
-*.log
+# Environment and Secrets
+.env
+*.pem
+*.key
+*.cert
+
+# Runtime Data & Storage
 data/
-runtime_state/
+*.db
+*.sqlite
+
+# IDE & Editor
+.vscode/
+.idea/
+*.swp
+
+# Node & UI build artifacts
+node_modules/
+ui/node_modules/
+ui/dist/
+src-tauri/target/
