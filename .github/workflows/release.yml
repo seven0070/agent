@@ -66,6 +66,7 @@ jobs:
         with:
           name: ui-dist
           path: ui/dist/
+          if-no-files-found: error
 
   build-tauri:
     name: Build Desktop Application (${{ matrix.platform }})
@@ -112,17 +113,23 @@ jobs:
         run: |
           cd ui
           npm ci
-          npx tauri build || echo "Tauri build step completed"
+          npx tauri build
 
       - name: Verify Desktop Artifacts & Generate Checksums
         shell: bash
         run: |
-          echo "=== Verifying Desktop Artifacts ==="
-          ls -la src-tauri/target/release/ || echo "Tauri target dir checked"
-          if [ -d "src-tauri/target/release/bundle" ]; then
-            cd src-tauri/target/release/bundle
-            find . -type f \( -name "*.msi" -o -name "*.exe" -o -name "*.deb" -o -name "*.AppImage" \) -exec sha256sum {} \; > CHECKSUMS.sha256 || true
+          echo "=== Fail-Closed Desktop Artifact Verification ==="
+          if [ ! -d "src-tauri/target/release/bundle" ]; then
+            echo "ERROR: Tauri target release bundle directory not found!"
+            return 1 2>/dev/null || false
           fi
+          cd src-tauri/target/release/bundle
+          find . -type f \( -name "*.msi" -o -name "*.exe" -o -name "*.deb" -o -name "*.AppImage" \) -exec sha256sum {} \; > CHECKSUMS.sha256
+          if [ ! -s CHECKSUMS.sha256 ]; then
+            echo "ERROR: No desktop installer artifacts were generated!"
+            return 1 2>/dev/null || false
+          fi
+          cat CHECKSUMS.sha256
 
       - name: Upload Desktop Artifacts
         uses: actions/upload-artifact@v4
@@ -132,3 +139,23 @@ jobs:
             src-tauri/target/release/bundle/
             src-tauri/target/release/*.exe
             src-tauri/target/release/*.msi
+          if-no-files-found: error
+
+  create-github-release:
+    name: Create GitHub Release
+    needs: [build-tauri]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download All Desktop Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-artifacts/**/*
+          draft: false
+          prerelease: false
+          generate_release_notes: true

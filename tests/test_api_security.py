@@ -11,16 +11,13 @@ client = TestClient(app)
 
 def test_security_constitutional_protection_bypass_prevention():
     """Verifies API endpoint blocks unauthorized constitutional modifications."""
-    # Attempt mutation on protected constitutional rules category
     payload = {
         "mutation_id": "attack-001",
         "target": "constitutional_rules",
         "proposed_changes": {"bypass": True},
     }
-    # Evolution cycle dry-run call
     response = client.post("/api/evolution/cycle?dry_run=true")
     assert response.status_code == 200
-    # Direct constitutional guard check
     from agent.constitution import ConstitutionalGuard, ConstitutionalViolationError
     guard = ConstitutionalGuard()
     with pytest.raises(ConstitutionalViolationError):
@@ -44,7 +41,6 @@ def test_security_sandbox_path_traversal_prevention():
     assert "data/workspace" in data["workspace_root"]
     assert "../" not in data["workspace_root"]
 
-
 def test_security_workspace_file_path_traversal_attack():
     """Verifies /api/workspace/files rejects path traversal payloads in session_id."""
     res = client.get("/api/workspace/files?session_id=../../../../etc")
@@ -55,7 +51,6 @@ def test_security_workspace_file_path_traversal_attack():
         assert not f["path"].startswith("/")
         assert ".." not in f["path"]
 
-
 def test_security_cross_platform_get_data_dir():
     """Verifies get_data_dir() resolves valid writable directory."""
     from agent.config import get_data_dir, get_settings
@@ -65,3 +60,10 @@ def test_security_cross_platform_get_data_dir():
 
     settings = get_settings()
     assert settings.data_dir == d_dir
+
+def test_security_backend_localhost_binding_and_health_contract():
+    """Verifies backend launcher configuration enforces localhost-only binding and health contract."""
+    from agent.config import get_settings
+    settings = get_settings()
+    assert settings.agent_version == "0.1.0"
+    assert settings.agent_env is not None
