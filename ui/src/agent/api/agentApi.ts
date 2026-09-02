@@ -37,6 +37,14 @@ export async function fetchMissions(): Promise<AgentMission[]> {
   }));
 }
 
+export async function fetchWorkspaceFiles(sessionId?: string): Promise<any[]> {
+  const url = sessionId ? `${API_BASE}/workspace/files?session_id=${sessionId}` : `${API_BASE}/workspace/files`;
+  const res = await fetch(url);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.files || [];
+}
+
 export async function fetchEvolutionCandidates(): Promise<EvolutionCandidate[]> {
   const res = await fetch(`${API_BASE}/evolution/status`);
   if (!res.ok) return [];

@@ -1,7 +1,7 @@
-import React, { Suspense } from 'react';
+import React, { useEffect, useState, Suspense } from 'react';
 import { AgentOverlay } from './agent/overlay/AgentOverlay';
+import { agentStore, AgentState } from './agent/state/agentStore';
 
-// Import OpenHands Agent Canvas providers & panels directly from @openhands/agent-canvas
 import {
   AgentServerUIProviders,
   ConversationPanel,
@@ -10,6 +10,14 @@ import {
 } from '@openhands/agent-canvas';
 
 export const App: React.FC = () => {
+  const [storeState, setStoreState] = useState<AgentState>(agentStore.getState());
+
+  useEffect(() => {
+    return agentStore.subscribe(() => {
+      setStoreState({ ...agentStore.getState() });
+    });
+  }, []);
+
   return (
     <AgentServerUIProviders>
       <div
@@ -48,7 +56,7 @@ export const App: React.FC = () => {
             }}
           >
             <Suspense fallback={<div style={{ padding: '16px', color: '#64748b' }}>Loading File Workspace...</div>}>
-              <FileExplorer files={[]} />
+              <FileExplorer files={storeState.workspaceFiles || []} />
             </Suspense>
           </div>
 

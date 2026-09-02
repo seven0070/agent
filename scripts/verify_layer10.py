@@ -1,6 +1,6 @@
 """
 Layer 10 Verification Script — Desktop Interface & Public API Boundary.
-Verifies end-to-end integration across Layers 0 through 10.
+Verifies end-to-end integration across Layers 0 through 10 with OpenHands Workspace.
 """
 
 import sys
@@ -17,21 +17,26 @@ def main() -> int:
     assert health_res.status_code == 200
     hdata = health_res.json()
     assert hdata["status"] == "online"
-    assert len(hdata["layers"]) == 10
-    print("  ✓ All 10 layers reporting active status in system health check")
+    assert len(hdata["layers"]) >= 10
+    assert hdata["layers"]["openhands_workspace"] == "active"
+    print("  ✓ System health reporting active status across all layers including OpenHands workspace")
 
-    # 2. Session Management & Sovereign Chat Streaming
-    print("[2/5] Verifying Session Management & SSE Chat Streaming...")
+    # 2. Session Management & Dynamic Workspace Files
+    print("[2/5] Verifying Session Management, OpenHands Files, & SSE Chat Streaming...")
     sess_res = client.post("/api/sessions", json={"title": "Verification Session L10"})
     assert sess_res.status_code == 200
     sid = sess_res.json()["session_id"]
+
+    files_res = client.get(f"/api/workspace/files?session_id={sid}")
+    assert files_res.status_code == 200
+    assert "files" in files_res.json()
 
     chat_payload = {"session_id": sid, "prompt": "Calculate 15 + 27 and create workspace file"}
     with client.stream("POST", "/api/chat/stream", json=chat_payload) as stream_res:
         assert stream_res.status_code == 200
         lines = [line for line in stream_res.iter_lines() if line.startswith("data:")]
         assert len(lines) >= 3
-    print("  ✓ Session created and SSE chat message stream executed cleanly")
+    print("  ✓ Session created, dynamic workspace file query succeeded, and SSE chat message stream executed cleanly")
 
     # 3. Domain API Endpoints Verification
     print("[3/5] Verifying Domain Endpoints (Planning, Approvals, Coding, Evolution, Audit)...")

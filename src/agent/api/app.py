@@ -1,5 +1,6 @@
 """
 FastAPI Application Core for Layer 10 Public Agent Service.
+Provides OpenHands & Sovereign Agent unified API backend boundary.
 """
 
 from fastapi import FastAPI, HTTPException, Request, Depends, status
@@ -9,6 +10,7 @@ from typing import List, Dict, Any, Optional
 import asyncio
 import uuid
 import json
+import os
 from datetime import datetime, timezone
 
 from agent.api.schemas import (
@@ -27,11 +29,11 @@ logger = get_logger("agent.api.app")
 
 app = FastAPI(
     title="Sovereign Agent Local API",
-    description="Layer 10 Service Boundary over Layers 0-9",
+    description="Layer 10 Service Boundary over Layers 0-9 with OpenHands Workspace Integration",
     version="0.1.0",
 )
 
-# CORS configuration restricted to local desktop shell
+# CORS configuration restricted to local desktop shell and dev server
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:1420", "http://127.0.0.1:1420", "tauri://localhost"],
@@ -40,7 +42,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Shared in-memory service instances (backed by Layer 0-9 persistent stores)
+# Shared service instances
 session_manager = SessionMemoryManager()
 adapter = AgentScopeAdapter()
 planner = RuleBasedPlanner()
@@ -48,7 +50,7 @@ broker = CapabilityBroker()
 orchestrator = PlanOrchestrator(broker=broker)
 guard = ConstitutionalGuard()
 
-# In-memory sessions index
+# Active sessions and workspace files index
 _SESSIONS: Dict[str, Dict[str, Any]] = {}
 
 @app.exception_handler(ConstitutionalViolationError)
@@ -77,6 +79,7 @@ async def get_health():
             "runtime": "active",
             "evaluation": "active",
             "evolution": "active",
+            "openhands_workspace": "active",
         },
     }
 
@@ -101,7 +104,7 @@ async def list_sessions():
 
 @app.post("/api/sessions", response_model=SessionResponse)
 async def create_session(req: SessionCreateRequest):
-    """Creates a new agent chat session."""
+    """Creates a new agent chat session / OpenHands conversation."""
     sid = f"sess-{uuid.uuid4().hex[:8]}"
     now = datetime.now(timezone.utc).isoformat()
     title = req.title or f"Chat Session {sid[-4:]}"
@@ -117,7 +120,7 @@ async def create_session(req: SessionCreateRequest):
     }
     _SESSIONS[sid] = session_data
     session_manager.add_turn(sid, "system", "Session initialized")  # Initialize Layer 3 memory
-    logger.info(f"Created API session '{sid}' with title '{title}'")
+    logger.info(f"Created API session / OpenHands conversation '{sid}' with title '{title}'")
     return SessionResponse(**session_data, message_count=0)
 
 @app.get("/api/sessions/{session_id}", response_model=SessionResponse)
@@ -142,14 +145,34 @@ async def delete_session(session_id: str):
     session_manager.clear_session(session_id)
     return {"status": "success", "message": f"Session '{session_id}' deleted."}
 
+# --- OpenHands File Explorer & Workspace Endpoints ---
+@app.get("/api/workspace/files")
+async def list_workspace_files(session_id: Optional[str] = None):
+    """Returns dynamic file tree for the active session's workspace directory."""
+    workspace_root = os.path.abspath("data/workspace")
+    os.makedirs(workspace_root, exist_ok=True)
+
+    files_list = []
+    for root, dirs, filenames in os.walk(workspace_root):
+        for f in filenames:
+            rel_path = os.path.relpath(os.path.join(root, f), workspace_root)
+            full_p = os.path.join(root, f)
+            files_list.append({
+                "id": rel_path,
+                "name": f,
+                "path": rel_path,
+                "type": "file",
+                "size_bytes": os.path.getsize(full_p),
+                "modified_at": datetime.fromtimestamp(os.path.getmtime(full_p), timezone.utc).isoformat(),
+            })
+
+    return {"workspace_root": "data/workspace", "files": files_list}
+
 # --- Sovereign Chat Streaming Endpoint ---
 @app.post("/api/chat/stream")
 async def stream_chat_message(req: ChatMessageRequest):
-    """
-    Streams agent message execution and thought updates via SSE.
-    """
+    """Streams agent message execution and thought updates via SSE."""
     if req.session_id not in _SESSIONS:
-        # Auto-create if missing
         _SESSIONS[req.session_id] = {
             "session_id": req.session_id,
             "title": f"Session {req.session_id[:8]}",
@@ -161,7 +184,6 @@ async def stream_chat_message(req: ChatMessageRequest):
         }
 
     async def event_generator():
-        # Frame 1: Message Started
         frame1 = StreamEventFrame(
             event_type="MESSAGE_STARTED",
             session_id=req.session_id,
@@ -170,7 +192,6 @@ async def stream_chat_message(req: ChatMessageRequest):
         yield f"data: {frame1.model_dump_json()}\n\n"
         await asyncio.sleep(0.05)
 
-        # Plan execution if requested
         plan = planner.create_plan(goal=req.prompt)
         _SESSIONS[req.session_id]["active_plan_id"] = plan.id
 
@@ -181,10 +202,8 @@ async def stream_chat_message(req: ChatMessageRequest):
         )
         yield f"data: {frame_plan.model_dump_json()}\n\n"
 
-        # Execute goal via orchestrator
         plan_res = orchestrator.execute_plan(plan=plan)
 
-        # Frame 2: Delta
         delta_frame = StreamEventFrame(
             event_type="MESSAGE_DELTA",
             session_id=req.session_id,
@@ -192,7 +211,6 @@ async def stream_chat_message(req: ChatMessageRequest):
         )
         yield f"data: {delta_frame.model_dump_json()}\n\n"
 
-        # Final Message Frame
         final_msg = f"Completed task '{req.prompt}'. Executed {len(plan.tasks)} tasks cleanly."
         _SESSIONS[req.session_id]["messages"].append({"role": "user", "content": req.prompt})
         _SESSIONS[req.session_id]["messages"].append({"role": "assistant", "content": final_msg})
@@ -210,7 +228,6 @@ async def stream_chat_message(req: ChatMessageRequest):
 # --- Layer 5: Planning & DAG Endpoints ---
 @app.get("/api/plans/{plan_id}")
 async def get_plan(plan_id: str):
-    """Retrieves an active plan DAG state."""
     return {
         "plan_id": plan_id,
         "status": "active",
@@ -223,7 +240,6 @@ async def get_plan(plan_id: str):
 # --- Layer 4 & Layer 8/9: Approvals & Tools Endpoints ---
 @app.get("/api/approvals")
 async def list_pending_approvals():
-    """Lists pending human approval requests across Layer 4 (tools), Layer 7 (runtime), and Layer 9 (evolution)."""
     return [
         {
             "approval_id": "appr-001",
@@ -238,20 +254,17 @@ async def list_pending_approvals():
 
 @app.post("/api/approvals/{approval_id}")
 async def resolve_approval(approval_id: str, approved: bool):
-    """Resolves a pending human approval decision."""
     logger.info(f"Human approval '{approval_id}' resolved: approved={approved}")
     return {"approval_id": approval_id, "approved": approved, "status": "RESOLVED"}
 
 @app.get("/api/tools")
 async def list_registered_tools():
-    """Lists registered capabilities and tools."""
     tools = broker.registry.list_tools()
     return [{"tool_id": t.id, "description": t.description, "risk_level": t.risk_level.value} for t in tools]
 
 # --- Layer 6: Jcode Workspace Endpoints ---
 @app.get("/api/coding/workspace")
 async def get_coding_workspace():
-    """Retrieves Jcode coding workspace status and file diffs."""
     return {
         "status": "idle",
         "active_task": None,
@@ -263,7 +276,6 @@ async def get_coding_workspace():
 # --- Layer 3: Memory & Knowledge Endpoints ---
 @app.get("/api/memory/search")
 async def search_memory(query: str, session_id: Optional[str] = None):
-    """Inspects Layer 3 session and long-term memory entries."""
     if session_id:
         history = session_manager.get_session_history(session_id, limit=20)
         return [{"id": h.id, "type": h.memory_type.value, "content": h.content, "source": h.source} for h in history]
@@ -272,7 +284,6 @@ async def search_memory(query: str, session_id: Optional[str] = None):
 # --- Layer 9: Evolution Controller Endpoints ---
 @app.get("/api/evolution/status")
 async def get_evolution_status():
-    """Retrieves Layer 9 Evolution Controller status and active generation pointer."""
     return {
         "mode": "SEMI_AUTOMATIC",
         "active_generation": "agent-v1",
@@ -282,19 +293,16 @@ async def get_evolution_status():
 
 @app.post("/api/evolution/cycle")
 async def run_evolution_cycle(dry_run: bool = True):
-    """Triggers an out-of-band evolution control cycle."""
     return {"status": "completed", "dry_run": dry_run, "mutations_proposed": []}
 
 # --- Layer 8: Evaluation Endpoints ---
 @app.get("/api/evaluations/reports")
 async def list_evaluation_reports():
-    """Lists recent evaluation benchmark reports."""
     return []
 
 # --- Audit Viewer Endpoint ---
 @app.get("/api/audit/logs")
 async def get_audit_logs(limit: int = 50, event_type: Optional[str] = None):
-    """Queries unified audit log event stream across all layers."""
     return [
         {
             "timestamp": datetime.now(timezone.utc).isoformat(),

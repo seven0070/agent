@@ -1,5 +1,5 @@
 /**
- * Dynamic Agent State Store managing active sessions and event streams.
+ * Dynamic Agent State Store managing active sessions, workspace files, and event streams.
  */
 
 import {
@@ -15,6 +15,7 @@ import {
   resolveApproval as resolveApprovalApi,
   fetchConstitutionStatus,
   createSession as createSessionApi,
+  fetchWorkspaceFiles,
 } from '../api/agentApi';
 
 export interface AgentState {
@@ -22,6 +23,7 @@ export interface AgentState {
   activeTab: 'missions' | 'evolution' | 'trust' | 'coding' | 'runtime' | 'memory' | 'approvals' | 'system';
   overlayOpen: boolean;
   missions: AgentMission[];
+  workspaceFiles: any[];
   evolutionCandidates: EvolutionCandidate[];
   approvals: ApprovalRequest[];
   constitution: ConstitutionStatus | null;
@@ -33,6 +35,7 @@ class AgentStore {
     activeTab: 'missions',
     overlayOpen: true,
     missions: [],
+    workspaceFiles: [],
     evolutionCandidates: [],
     approvals: [],
     constitution: null,
@@ -60,6 +63,7 @@ class AgentStore {
 
   public setActiveSessionId(sessionId: string): void {
     this.state.activeSessionId = sessionId;
+    this.loadWorkspaceFiles(sessionId);
     this.notify();
   }
 
@@ -75,6 +79,12 @@ class AgentStore {
     return session.session_id;
   }
 
+  public async loadWorkspaceFiles(sessionId?: string): Promise<void> {
+    const files = await fetchWorkspaceFiles(sessionId || this.state.activeSessionId || undefined);
+    this.state.workspaceFiles = files;
+    this.notify();
+  }
+
   public async loadAll(): Promise<void> {
     try {
       const [missions, candidates, approvals, constStatus] = await Promise.all([
@@ -87,6 +97,7 @@ class AgentStore {
       if (missions.length > 0 && !this.state.activeSessionId) {
         this.state.activeSessionId = missions[0].id;
       }
+      await this.loadWorkspaceFiles();
       this.state.evolutionCandidates = candidates;
       this.state.approvals = approvals;
       this.state.constitution = constStatus;
