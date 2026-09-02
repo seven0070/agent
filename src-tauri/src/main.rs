@@ -1,5 +1,5 @@
 // Sovereign Agent OS Tauri 2 Desktop Shell Main Entrypoint
-// Desktop Runtime Supervisor managing Python FastAPI backend sidecar lifecycle,
+// Desktop Runtime Supervisor managing Python FastAPI backend sidecar process lifecycle,
 // localhost binding, health readiness contract polling, and clean termination.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
@@ -28,12 +28,18 @@ impl BackendSupervisor {
             return Ok(()); // Already running
         }
 
-        println!("[Desktop Shell] Starting Agent backend sidecar process on 127.0.0.1:{}...", self.port);
-        let child = Command::new("python")
-            .arg("scripts/run_agent_backend.py")
+        println!("[Desktop Shell Supervisor] Starting Agent backend sidecar process on 127.0.0.1:{}...", self.port);
+        let child = Command::new("agent-backend")
             .arg("--port")
             .arg(self.port.to_string())
             .spawn()
+            .or_else(|_| {
+                Command::new("python")
+                    .arg("scripts/run_agent_backend.py")
+                    .arg("--port")
+                    .arg(self.port.to_string())
+                    .spawn()
+            })
             .or_else(|_| {
                 Command::new("python3")
                     .arg("scripts/run_agent_backend.py")
@@ -50,7 +56,7 @@ impl BackendSupervisor {
     fn stop_backend(&self) {
         if let Ok(mut guard) = self.process.lock() {
             if let Some(mut child) = guard.take() {
-                println!("[Desktop Shell] Terminating Agent backend sidecar process...");
+                println!("[Desktop Shell Supervisor] Terminating Agent backend sidecar process...");
                 let _ = child.kill();
                 let _ = child.wait();
             }

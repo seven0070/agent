@@ -75,3 +75,8 @@ def test_security_backend_health_wait_contract():
     res = client.get("/health")
     assert res.status_code == 200
     assert res.json()["status"] == "online"
+
+def test_security_standalone_main_entrypoint():
+    """Verifies standalone main entrypoint imports and initializes app properly."""
+    import agent.api.main as standalone_main
+    assert hasattr(standalone_main, "main")

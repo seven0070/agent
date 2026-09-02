@@ -41,6 +41,53 @@ jobs:
           python scripts/verify_layer9.py
           python scripts/verify_layer10.py
 
+  build-backend-executable:
+    name: Build Standalone Backend Executable (${{ matrix.platform }})
+    needs: [test]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+            binary_name: agent-backend-x86_64-pc-windows-msvc.exe
+          - os: ubuntu-latest
+            platform: linux
+            binary_name: agent-backend-x86_64-unknown-linux-gnu
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install Dependencies & PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev] pyinstaller
+
+      - name: Build Standalone Executable via PyInstaller
+        run: |
+          pyinstaller --onefile --name ${{ matrix.binary_name }} src/agent/api/main.py
+
+      - name: Prepare Tauri Binary Sidecar Directory
+        shell: bash
+        run: |
+          mkdir -p src-tauri/binaries/
+          cp dist/${{ matrix.binary_name }} src-tauri/binaries/
+
+      - name: Upload Backend Executable Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-executable-${{ matrix.platform }}
+          path: src-tauri/binaries/
+          if-no-files-found: error
+
   build-frontend:
     name: Build Frontend SPA
     runs-on: ubuntu-latest
@@ -70,7 +117,7 @@ jobs:
 
   build-tauri:
     name: Build Desktop Application (${{ matrix.platform }})
-    needs: [test, build-frontend]
+    needs: [test, build-backend-executable, build-frontend]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -102,6 +149,12 @@ jobs:
         with:
           name: ui-dist
           path: ui/dist
+
+      - name: Download Backend Executable Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-executable-${{ matrix.platform }}
+          path: src-tauri/binaries
 
       - name: Install Linux System Dependencies
         if: matrix.platform == 'linux'
