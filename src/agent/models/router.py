@@ -50,7 +50,19 @@ class ModelRouter:
     def select_model(self, required_capabilities: Optional[Dict[str, bool]] = None) -> ModelSpec:
         """
         Selects the best available model matching requested capabilities sorted by priority.
+        Promoted evolution artifacts may pin a preferred model id.
         """
+        try:
+            from agent.evolution.generation import load_artifact
+            routing = load_artifact("model_routing") or {}
+            preferred = (routing.get("proposed_changes") or {}).get("preferred_model_id")
+            if preferred:
+                for spec in self.registry.list_enabled():
+                    if spec.id == preferred:
+                        return spec
+        except Exception:
+            pass
+
         candidates = self.registry.list_enabled()
         if not candidates:
             raise RuntimeError("No enabled models available in ModelRegistry.")

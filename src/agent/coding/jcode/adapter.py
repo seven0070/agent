@@ -113,23 +113,34 @@ class JcodeAdapter(CodingEngineInterface):
 
             if task.test_command:
                 self._emit_event("tool_started", session_id, task.task_id, {"action": "run_tests", "command": task.test_command})
-                cmd = [task.test_command]
-                if task.test_command == "pytest":
-                    cmd = [task.test_command, "test_math_module.py"]
-                test_proc = subprocess.run(
-                    cmd,
-                    cwd=workspace_root,
-                    capture_output=True,
-                    text=True,
-                    env={**os.environ, "PYTHONPATH": workspace_root},
+                from agent.runtime.models import NetworkPolicy, RuntimeSession
+                from agent.runtime.policy import ResourceLimits
+                from agent.runtime.sandbox import RuntimeSandbox
+                import sys as _sys
+
+                sandbox = RuntimeSandbox(
+                    session=RuntimeSession(
+                        session_id=f"jcode-run-{session_id}",
+                        workspace_id=session_id,
+                        workspace_dir=workspace_root,
+                        network_policy=NetworkPolicy.DENY,
+                        limits=ResourceLimits(timeout_seconds=30.0, max_output_bytes=65536),
+                    )
                 )
+                if task.test_command == "pytest":
+                    cmd = [_sys.executable, "-m", "pytest", "-q"]
+                    if os.path.isfile(os.path.join(workspace_root, "test_math_module.py")):
+                        cmd.append("test_math_module.py")
+                else:
+                    cmd = [task.test_command]
+                proc = sandbox.execute_process(cmd=cmd, cwd=".", env={**os.environ, "PYTHONPATH": workspace_root})
                 tests_run = 1
-                if test_proc.returncode == 0:
+                if proc.get("success"):
                     tests_passed = 1
                     self._emit_event("tool_executed", session_id, task.task_id, {"action": "run_tests", "status": "passed"})
                 else:
                     tests_failed = 1
-                    errors.append(f"Test suite failure: {test_proc.stderr}")
+                    errors.append(f"Test suite failure: {proc.get('stderr')}")
                     self._emit_event("tool_executed", session_id, task.task_id, {"action": "run_tests", "status": "failed"})
 
             elapsed_ms = (time.perf_counter() - start_time) * 1000

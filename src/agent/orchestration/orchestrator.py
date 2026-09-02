@@ -98,8 +98,13 @@ class PlanOrchestrator:
                 # Check if any task permanently FAILED or BLOCKED
                 failed_tasks = [t for t in plan.tasks.values() if t.status in [TaskState.FAILED, TaskState.CANCELLED]]
                 if failed_tasks:
-                    # Attempt Replanning (version bump plan-v1 -> plan-v2)
-                    replanned = self.replan(plan, failed_tasks[0].id)
+                    failed = failed_tasks[0]
+                    security_fail = "Access Denied" in (failed.error or "") or "Permission Denied" in (failed.error or "")
+                    if security_fail:
+                        plan.status = "failed"
+                        self._emit_event("PLAN_FAILED", plan, status="failed", metadata={"error": failed.error})
+                        return plan
+                    replanned = self.replan(plan, failed.id)
                     if replanned:
                         plan = replanned
                         continue
@@ -136,19 +141,20 @@ class PlanOrchestrator:
 
                 if res.success:
                     task.outputs = res.output
+                    task.metadata = {**(task.metadata or {}), **(res.metadata or {})}
                     task.status = transition_task_state(task.status, TaskState.SUCCEEDED)
                     self._emit_event("TASK_COMPLETED", plan, task_id=task.id, status="success")
                 else:
                     task.error = res.error
-                    # Retry logic check
-                    if task.retry_count < task.max_retries:
+                    security_fail = "Access Denied" in (res.error or "") or "Permission Denied" in (res.error or "")
+                    if security_fail or task.retry_count >= task.max_retries:
+                        task.status = transition_task_state(task.status, TaskState.FAILED)
+                        self._emit_event("TASK_FAILED", plan, task_id=task.id, status="failed", metadata={"error": res.error})
+                    else:
                         task.retry_count += 1
                         logger.warning(f"Task '{task.id}' failed. Retrying attempt {task.retry_count}/{task.max_retries}")
                         task.status = transition_task_state(task.status, TaskState.READY)
                         self._emit_event("TASK_RETRIED", plan, task_id=task.id, status="retrying", metadata={"retry_count": task.retry_count})
-                    else:
-                        task.status = transition_task_state(task.status, TaskState.FAILED)
-                        self._emit_event("TASK_FAILED", plan, task_id=task.id, status="failed", metadata={"error": res.error})
             else:
                 # Default generic task without tool requirement -> auto SUCCEEDED
                 task.outputs = f"Executed generic prompt: {task.description}"

@@ -1,6 +1,6 @@
 """
 Layer 10 Verification Script — Desktop Interface & Public API Boundary.
-Verifies end-to-end integration across Layers 0 through 10 with OpenHands Workspace.
+Verifies the FastAPI service boundary used by the Tauri/React desktop.
 """
 
 import sys
@@ -18,11 +18,12 @@ def main() -> int:
     hdata = health_res.json()
     assert hdata["status"] == "online"
     assert len(hdata["layers"]) >= 10
-    assert hdata["layers"]["openhands_workspace"] == "active"
-    print("  ✓ System health reporting active status across all layers including OpenHands workspace")
+    assert hdata["layers"]["evolution"] == "active"
+    assert hdata["layers"]["desktop"] == "active"
+    print("  ✓ System health reporting active status across all layers")
 
     # 2. Session Management & Dynamic Workspace Files
-    print("[2/5] Verifying Session Management, OpenHands Files, & SSE Chat Streaming...")
+    print("[2/5] Verifying Session Management, Workspace Files, & SSE Chat Streaming...")
     sess_res = client.post("/api/sessions", json={"title": "Verification Session L10"})
     assert sess_res.status_code == 200
     sid = sess_res.json()["session_id"]

@@ -21,6 +21,8 @@ _COMPONENT_TARGET_MAP = {
     "broker": "tool_selection_policy",
     "skill": "skill_definitions",
     "skills": "skill_definitions",
+    "coding": "skill_definitions",
+    "jcode": "skill_definitions",
     "memory": "memory_retrieval_strategy",
     "rag": "memory_retrieval_strategy",
     "model": "model_routing",

@@ -3,6 +3,7 @@ Experiment Runner Executing Candidate Benchmarks via Layer 8 Evaluation Engine.
 """
 
 from typing import Optional
+import os
 from agent.evolution.models import Mutation, CandidateRecord
 from agent.evolution.protection import is_protected_path
 from agent.evaluation.runner import EvaluationRunner
@@ -132,12 +133,29 @@ class ExperimentRunner:
             return self._synthetic_pass(mutation)
 
         runner = self.eval_runner or EvaluationRunner()
-        candidate_run = await runner.run_evaluation_suite(
-            agent_version=mutation.candidate_version,
-            model_version="mock-model-v1",
-            dataset_version="benchmark-v1",
-        )
-        report = self.comparator.compare(candidate_run=candidate_run, baseline_run=baseline_run)
-        report = self._overlay_candidate_safety(report, candidate, implementation_ok)
-        logger.info(f"Experiment completed for '{mutation.candidate_version}': recommendation={report.recommendation}")
-        return report
+        previous = os.environ.get("AGENT_GENERATION_DIR")
+        try:
+            if candidate and candidate.workspace_dir:
+                artifacts = os.path.join(candidate.workspace_dir, "artifacts")
+                if os.path.isdir(artifacts):
+                    os.environ["AGENT_GENERATION_DIR"] = artifacts
+            if baseline_run is None:
+                baseline_run = await runner.run_evaluation_suite(
+                    agent_version=mutation.parent_version,
+                    model_version="mock-model-v1",
+                    dataset_version="benchmark-v1",
+                )
+            candidate_run = await runner.run_evaluation_suite(
+                agent_version=mutation.candidate_version,
+                model_version="mock-model-v1",
+                dataset_version="benchmark-v1",
+            )
+            report = self.comparator.compare(candidate_run=candidate_run, baseline_run=baseline_run)
+            report = self._overlay_candidate_safety(report, candidate, implementation_ok)
+            logger.info(f"Experiment completed for '{mutation.candidate_version}': recommendation={report.recommendation}")
+            return report
+        finally:
+            if previous is None:
+                os.environ.pop("AGENT_GENERATION_DIR", None)
+            else:
+                os.environ["AGENT_GENERATION_DIR"] = previous

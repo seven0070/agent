@@ -88,9 +88,27 @@ class RuntimeSandbox:
 
         # Sanitize environment variables: do not inherit sensitive host keys directly
         safe_env = dict(env or os.environ)
-        safe_env.pop("OPENAI_API_KEY", None)
-        safe_env.pop("DASHSCOPE_API_KEY", None)
-        safe_env.pop("ANTHROPIC_API_KEY", None)
+        for key in list(safe_env.keys()):
+            upper = key.upper()
+            if any(token in upper for token in ("API_KEY", "SECRET", "TOKEN", "PASSWORD", "CREDENTIAL")):
+                safe_env.pop(key, None)
+        if self.session.network_policy == NetworkPolicy.DENY:
+            for key in (
+                "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy",
+                "NO_PROXY", "no_proxy",
+            ):
+                safe_env.pop(key, None)
+            safe_env["PYTHONHTTPSVERIFY"] = "1"
+            joined = " ".join(str(part) for part in cmd).lower()
+            if any(token in joined for token in ("curl ", "wget ", "nc ", "ncat", "ssh ", "http://", "https://")):
+                self._emit_event("PERMISSION_DENIED", "network_access", "blocked", {"cmd": cmd})
+                return {
+                    "success": False,
+                    "exit_code": 126,
+                    "stdout": "",
+                    "stderr": "Network access denied by RuntimeSandbox NetworkPolicy.DENY",
+                    "duration_ms": 0.0,
+                }
 
         self._emit_event("EXECUTION_STARTED", "process_run", "running", {"cmd": cmd, "cwd": target_cwd})
         start_time = time.perf_counter()

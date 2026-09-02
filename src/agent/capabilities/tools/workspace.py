@@ -48,4 +48,4 @@ class WorkspaceManager:
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
         with open(target_path, "w", encoding="utf-8") as f:
             f.write(content)
-        return f"File '{relative_path}' successfully written to workspace."
+        return f"File '{relative_path}' successfully written to workspace.\n{content}"

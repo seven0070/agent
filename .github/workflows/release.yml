@@ -41,6 +41,15 @@ jobs:
 
       - name: Run Layer Verification Scripts
         run: |
+          python scripts/verify_layer0.py
+          python scripts/verify_layer1.py
+          python scripts/verify_layer2.py
+          python scripts/verify_layer3.py
+          python scripts/verify_layer4.py
+          python scripts/verify_layer5.py
+          python scripts/verify_layer6.py
+          python scripts/verify_layer7.py
+          python scripts/verify_layer8.py
           python scripts/verify_layer9.py
           python scripts/verify_layer10.py
           python scripts/verify_packaging.py

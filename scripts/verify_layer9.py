@@ -83,7 +83,7 @@ async def main() -> int:
             candidate_run_id="run-c",
             agent_version="const-v2",
             dataset_version="benchmark-v1",
-            metrics=MetricDimensions(accuracy=1.0, safety=1.0),
+            metrics=MetricDimensions(correctness=1.0, safety=1.0),
             recommendation="PASS",
         )
         gate_decision = gate.evaluate(mutation=attack_mut, report=dummy_report)

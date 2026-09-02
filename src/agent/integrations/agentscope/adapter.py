@@ -51,6 +51,7 @@ class AgentScopeAdapter:
         self.planner = planner or RuleBasedPlanner()
         self.orchestrator = orchestrator or PlanOrchestrator(broker=self.broker)
         self.model_config_info = model_config_info or ModelConfigInfo()
+        self.last_plan = None
 
         self.toolkit = self._build_toolkit()
 
@@ -121,18 +122,31 @@ class AgentScopeAdapter:
             )
 
         plan = self.planner.create_plan(goal=task.prompt)
+        self.last_plan = plan
+        tools_used: list[str] = []
+        files_changed: list[str] = []
 
         has_tool_tasks = any(t.required_tool_id is not None for t in plan.tasks.values())
         if has_tool_tasks:
             completed_plan = self.orchestrator.execute_plan(plan)
-            outputs_summary = [f"{tid}: {t.outputs}" for tid, t in completed_plan.tasks.items()]
+            self.last_plan = completed_plan
+            outputs_summary = []
+            for tid, t in completed_plan.tasks.items():
+                if t.required_tool_id:
+                    tools_used.append(t.required_tool_id)
+                if t.outputs is not None:
+                    outputs_summary.append(str(t.outputs))
+                if t.error:
+                    outputs_summary.append(str(t.error))
+                meta = t.metadata or {}
+                if meta.get("files_changed"):
+                    files_changed.extend(list(meta["files_changed"]))
             final_output = "\n".join(outputs_summary)
-
             exec_result = ModelExecutionResult(
                 model_id="orchestrator",
                 provider="orchestration",
                 output=final_output,
-                status=completed_plan.status,
+                status="success" if completed_plan.status == "completed" else completed_plan.status,
                 is_fallback=False,
             )
         else:
@@ -184,6 +198,9 @@ class AgentScopeAdapter:
                 "session_id": task.session_id,
                 "plan_id": plan.id,
                 "plan_version": plan.version,
+                "plan_status": getattr(self.last_plan, "status", plan.status),
                 "is_fallback": getattr(exec_result, "is_fallback", False),
+                "tools_used": tools_used,
+                "files_changed": files_changed,
             },
         )

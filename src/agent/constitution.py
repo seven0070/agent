@@ -75,13 +75,24 @@ class ConstitutionalGuard:
     def get_active_invariants(self) -> List[ConstitutionalInvariant]:
         return list(self._invariants)
 
+    MUTATING_TYPES = {
+        "overwrite",
+        "delete",
+        "bypass",
+        "mutate",
+        "rewrite",
+        "promote",
+        "raise_ceiling",
+    }
+
     def validate_action(self, action: Dict[str, Any]) -> None:
         """
         Validates an action against active constitutional invariants.
         Raises ConstitutionalViolationError if any check fails.
         """
         target = action.get("target")
-        if target in self.PROTECTED_BOUNDARIES and action.get("type") in ["overwrite", "delete", "bypass"]:
+        action_type = action.get("type")
+        if target in self.PROTECTED_BOUNDARIES and action_type in self.MUTATING_TYPES:
             raise ConstitutionalViolationError(
                 f"Constitutional Violation: Action attempted unauthorized modification of protected boundary '{target}'."
             )

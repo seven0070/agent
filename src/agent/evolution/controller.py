@@ -247,6 +247,23 @@ class EvolutionController:
         mut.status = MutationStatus.EVALUATING
         self.registry.save_mutation(mut)
         self._audit("EVALUATION", report.recommendation, mutation=mut, report_id=report.report_id)
+        mut.metadata = {
+            **(mut.metadata or {}),
+            "evaluation_report": {
+                "report_id": report.report_id,
+                "recommendation": report.recommendation,
+                "safety_passed": report.safety_passed,
+                "correctness": report.metrics.correctness,
+                "safety": report.metrics.safety,
+                "reliability": report.metrics.reliability,
+                "tool_accuracy": report.metrics.tool_accuracy,
+                "test_pass_rate": report.metrics.test_pass_rate,
+                "regressions": list(report.regressions),
+                "agent_version": report.agent_version,
+                "candidate_run_id": report.candidate_run_id,
+                "baseline_run_id": report.baseline_run_id,
+            },
+        }
 
         gate_decision = self.gate.evaluate(mutation=mut, report=report)
         self._last_gate = {
@@ -306,6 +323,7 @@ class EvolutionController:
                 "type": "promote",
                 "target": mut.target.value,
                 "human_approved": True,
+                "approval_policy": "automatic",
             })
 
         return [self._canary_and_promote(mut, proposal, candidate, report)]
@@ -398,18 +416,45 @@ class EvolutionController:
             if item.mutation_id == mutation_id:
                 candidate = item
                 break
-        dummy_metrics_report = EvaluationReport(
-            report_id=f"approve-{mutation_id}",
-            candidate_run_id=f"run-{mutation_id}",
+        stored = (mut.metadata or {}).get("evaluation_report") or {}
+        if not stored:
+            mut.status = MutationStatus.REJECTED
+            self.registry.save_mutation(mut)
+            self._audit("APPROVAL_BLOCKED", "MISSING_EVAL", mutation=mut)
+            return {**card, "mutation_status": mut.status.value, "reason": "no evaluation report; refusing promotion"}
+        if stored.get("recommendation") == "FAIL" or stored.get("safety_passed") is False:
+            mut.status = MutationStatus.REJECTED
+            self.registry.save_mutation(mut)
+            self._audit("APPROVAL_BLOCKED", "EVAL_FAIL", mutation=mut)
+            return {**card, "mutation_status": mut.status.value, "reason": "failing evaluation cannot be promoted"}
+
+        from agent.evaluation.metrics import MetricDimensions
+        from agent.evaluation.models import EvaluationReport
+
+        report = EvaluationReport(
+            report_id=str(stored.get("report_id") or f"stored-{mutation_id}"),
+            candidate_run_id=str(stored.get("candidate_run_id") or f"run-{mutation_id}"),
+            baseline_run_id=stored.get("baseline_run_id"),
             agent_version=mut.candidate_version,
             dataset_version="benchmark-v1",
-            metrics=__import__("agent.evaluation.metrics", fromlist=["MetricDimensions"]).MetricDimensions(
-                correctness=1.0, safety=1.0, reliability=1.0, tool_accuracy=1.0, test_pass_rate=1.0
+            metrics=MetricDimensions(
+                correctness=float(stored.get("correctness", 0.0)),
+                safety=float(stored.get("safety", 0.0)),
+                reliability=float(stored.get("reliability", stored.get("correctness", 0.0))),
+                tool_accuracy=float(stored.get("tool_accuracy", stored.get("correctness", 0.0))),
+                test_pass_rate=float(stored.get("test_pass_rate", stored.get("correctness", 0.0))),
             ),
-            recommendation="PASS",
-            safety_passed=True,
+            recommendation=str(stored.get("recommendation") or "REVIEW"),
+            safety_passed=bool(stored.get("safety_passed", False)),
+            regressions=list(stored.get("regressions") or []),
         )
-        dummy_metrics_report.metrics.composite_score = dummy_metrics_report.metrics.compute_composite_score()
+        report.metrics.composite_score = report.metrics.compute_composite_score()
+        gate_decision = self.gate.evaluate(mutation=mut, report=report)
+        if not gate_decision.passed:
+            mut.status = MutationStatus.REJECTED
+            self.registry.save_mutation(mut)
+            self._audit("GATE_REJECTED", "REJECTED", mutation=mut, reasons=gate_decision.reasons)
+            return {**card, "mutation_status": mut.status.value, "reasons": gate_decision.reasons}
         if proposal is None:
             proposal = EvolutionProposal(
                 proposal_id=f"prop-{mutation_id}",
@@ -419,7 +464,7 @@ class EvolutionController:
                 proposed_change=mut.proposed_changes,
                 parent_version=mut.parent_version,
             )
-        promoted = self._canary_and_promote(mut, proposal, candidate, dummy_metrics_report)
+        promoted = self._canary_and_promote(mut, proposal, candidate, report)
         return {**card, "mutation_status": promoted.status.value, "active_generation": self.registry.get_active_generation()}
 
     def rollback(self, mutation_id: str, reason: str) -> Mutation:
