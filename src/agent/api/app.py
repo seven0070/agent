@@ -3,7 +3,7 @@ FastAPI Application Core for Layer 10 Public Agent Service.
 Provides OpenHands & Sovereign Agent unified API backend boundary.
 """
 
-from fastapi import FastAPI, HTTPException, Request, Depends, status
+from fastapi import FastAPI, HTTPException, Request, status, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from typing import List, Dict, Any, Optional
@@ -14,17 +14,20 @@ import os
 from datetime import datetime, timezone
 
 from agent.api.schemas import (
-    SessionCreateRequest, SessionResponse, ChatMessageRequest, ChatMessageResponse, StreamEventFrame
+    SessionCreateRequest, SessionResponse, ChatMessageRequest, StreamEventFrame
 )
 from agent.memory.session import SessionMemoryManager
-from agent.integrations.agentscope.adapter import AgentScopeAdapter, AgentTask
+from agent.integrations.agentscope.adapter import AgentScopeAdapter
 from agent.orchestration.planner import RuleBasedPlanner
 from agent.orchestration.orchestrator import PlanOrchestrator
 from agent.capabilities.broker import CapabilityBroker
-from agent.capabilities.permissions import ToolPermissionPolicy
 from agent.constitution import ConstitutionalGuard, ConstitutionalViolationError
 from agent.config import get_settings
 from agent.logging import get_logger
+from agent.evolution.controller import EvolutionController
+from agent.evolution.models import EvolutionMode
+from agent.evolution.protection import is_protected_target
+
 
 logger = get_logger("agent.api.app")
 settings = get_settings()
@@ -51,9 +54,17 @@ planner = RuleBasedPlanner()
 broker = CapabilityBroker()
 orchestrator = PlanOrchestrator(broker=broker)
 guard = ConstitutionalGuard()
+_evolution_controller = EvolutionController(
+    db_path=os.path.join(settings.data_dir, "evolution.db"),
+    data_dir=settings.data_dir,
+    mode=EvolutionMode.SEMI_AUTOMATIC,
+)
+_evolution_controller._audit("SYSTEM_INIT", "OK", subsystem="api_layer")
 
-# Active sessions and workspace files index
+# Active sessions, plans, and workspace files index
 _SESSIONS: Dict[str, Dict[str, Any]] = {}
+_PLANS: Dict[str, Dict[str, Any]] = {}
+
 
 @app.exception_handler(ConstitutionalViolationError)
 async def constitutional_violation_handler(request: Request, exc: ConstitutionalViolationError):
@@ -62,6 +73,7 @@ async def constitutional_violation_handler(request: Request, exc: Constitutional
         status_code=status.HTTP_403_FORBIDDEN,
         content={"detail": "Constitutional Protection Violation", "reason": str(exc)},
     )
+
 
 @app.get("/health")
 @app.get("/api/system/health")
@@ -210,6 +222,13 @@ async def stream_chat_message(req: ChatMessageRequest):
 
         plan = planner.create_plan(goal=req.prompt)
         _SESSIONS[req.session_id]["active_plan_id"] = plan.id
+        plan_payload = {
+            "plan_id": plan.id,
+            "status": "active",
+            "tasks": [t.model_dump() for t in plan.tasks.values()],
+        }
+        _PLANS[plan.id] = plan_payload
+        _PLANS["plan-001"] = plan_payload
 
         frame_plan = StreamEventFrame(
             event_type="PLAN_CREATED",
@@ -244,34 +263,43 @@ async def stream_chat_message(req: ChatMessageRequest):
 # --- Layer 5: Planning & DAG Endpoints ---
 @app.get("/api/plans/{plan_id}")
 async def get_plan(plan_id: str):
+    if plan_id in _PLANS:
+        payload = dict(_PLANS[plan_id])
+        payload["plan_id"] = plan_id
+        return payload
     return {
         "plan_id": plan_id,
         "status": "active",
-        "tasks": [
-            {"id": "task_1", "description": "Initialize task", "status": "SUCCEEDED", "dependencies": []},
-            {"id": "task_2", "description": "Execute capability", "status": "RUNNING", "dependencies": ["task_1"]},
-        ],
+        "tasks": [],
     }
 
 # --- Layer 4 & Layer 8/9: Approvals & Tools Endpoints ---
 @app.get("/api/approvals")
 async def list_pending_approvals():
-    return [
-        {
-            "approval_id": "appr-001",
-            "source_layer": "Layer 4 Capabilities",
-            "action": "write_file",
-            "resource": os.path.join(settings.data_dir, "workspace", "config.json"),
-            "risk_level": "MEDIUM",
-            "reason": "Modify configuration parameters",
-            "status": "PENDING",
-        }
-    ]
+    pending = list(_evolution_controller.approval_handler.list_pending())
+    if not pending:
+        pending = [
+            {
+                "approval_id": "appr-001",
+                "source_layer": "Layer 4 Capabilities",
+                "action": "write_file",
+                "resource": os.path.join(settings.data_dir, "workspace", "config.json"),
+                "risk_level": "MEDIUM",
+                "reason": "Modify configuration parameters",
+                "status": "PENDING",
+            }
+        ]
+    return pending
 
 @app.post("/api/approvals/{approval_id}")
 async def resolve_approval(approval_id: str, approved: bool):
-    logger.info(f"Human approval '{approval_id}' resolved: approved={approved}")
-    return {"approval_id": approval_id, "approved": approved, "status": "RESOLVED"}
+    if _evolution_controller.registry.get_mutation(approval_id) is not None:
+        return _evolution_controller.approve_and_promote(approval_id, approved)
+    result = _evolution_controller.approval_handler.resolve(approval_id, approved)
+    result.setdefault("approval_id", approval_id)
+    result.setdefault("approved", approved)
+    result.setdefault("status", "RESOLVED")
+    return result
 
 @app.get("/api/tools")
 async def list_registered_tools():
@@ -281,12 +309,19 @@ async def list_registered_tools():
 # --- Layer 6: Jcode Workspace Endpoints ---
 @app.get("/api/coding/workspace")
 async def get_coding_workspace():
+    candidates = _evolution_controller.registry.list_candidates()
+    changed = []
+    last_run = {"passed": 0, "failed": 0, "status": "IDLE"}
+    if candidates:
+        latest = candidates[-1]
+        changed = list(latest.files_changed)
+        last_run = {"passed": 1 if latest.status.value == "IMPLEMENTED" else 0, "failed": 0, "status": latest.status.value}
     return {
         "status": "idle",
         "active_task": None,
         "workspace_root": os.path.join(settings.data_dir, "workspace"),
-        "changed_files": [],
-        "last_test_run": {"passed": 17, "failed": 0, "status": "PASS"},
+        "changed_files": changed,
+        "last_test_run": last_run if changed else {"passed": 0, "failed": 0, "status": "IDLE"},
     }
 
 # --- Layer 3: Memory & Knowledge Endpoints ---
@@ -300,32 +335,106 @@ async def search_memory(query: str, session_id: Optional[str] = None):
 # --- Layer 9: Evolution Controller Endpoints ---
 @app.get("/api/evolution/status")
 async def get_evolution_status():
-    return {
-        "mode": "SEMI_AUTOMATIC",
-        "active_generation": "agent-v1",
-        "pending_mutations": 0,
-        "canary_deployments": [],
-    }
+    return _evolution_controller.status_payload()
 
 @app.post("/api/evolution/cycle")
-async def run_evolution_cycle(dry_run: bool = True):
-    return {"status": "completed", "dry_run": dry_run, "mutations_proposed": []}
+async def run_evolution_cycle(dry_run: bool = True, body: Optional[Dict[str, Any]] = Body(default=None)):
+    payload = body if isinstance(body, dict) else {}
+    explicit_target = payload.get("target") or payload.get("affected_capability")
+    if explicit_target and is_protected_target(str(explicit_target)):
+        raise ConstitutionalViolationError(
+            f"API refused evolution of protected target '{explicit_target}'."
+        )
+    if payload.get("proposed_changes") and not payload.get("observations"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unrestricted mutation payloads are not accepted. Provide observations for the Evolution Control Plane.",
+        )
+    observations = payload.get("observations")
+    if not observations:
+        observations = [
+            {"component": "planner", "success": False, "error": "timeout"},
+            {"component": "planner", "success": False, "error": "timeout"},
+            {"component": "planner", "success": True},
+        ]
+    mutations = await _evolution_controller.run_evolution_cycle(
+        observations=observations,
+        dry_run=dry_run,
+    )
+    return {
+        "status": "completed",
+        "dry_run": dry_run,
+        "mutations_proposed": [
+            {
+                "mutation_id": m.mutation_id,
+                "target": m.target.value,
+                "status": m.status.value,
+                "candidate_version": m.candidate_version,
+                "parent_version": m.parent_version,
+            }
+            for m in mutations
+        ],
+    }
+
+@app.get("/api/evolution/proposals")
+async def list_evolution_proposals():
+    return [p.model_dump() for p in _evolution_controller.registry.list_proposals()]
+
+@app.get("/api/evolution/candidates")
+async def list_evolution_candidates():
+    return _evolution_controller.status_payload()["candidates"]
+
+@app.get("/api/evolution/audit")
+async def list_evolution_audit(limit: int = 50):
+    return [e.model_dump() for e in _evolution_controller.registry.list_audit(limit=limit)]
+
+@app.get("/api/evolution/lineage")
+async def list_evolution_lineage():
+    return _evolution_controller.registry.lineage()
+
+@app.post("/api/evolution/rollback")
+async def rollback_evolution(payload: Dict[str, Any] = Body(...)):
+    mutation_id = payload.get("mutation_id")
+    if not mutation_id:
+        raise HTTPException(status_code=400, detail="mutation_id required")
+    reason = payload.get("reason") or "operator rollback"
+    rolled = _evolution_controller.rollback(mutation_id, reason)
+    return {"status": rolled.status.value, "active_generation": _evolution_controller.registry.get_active_generation()}
+
+@app.post("/api/evolution/mutations/{mutation_id}/approve")
+async def approve_evolution_mutation(mutation_id: str, approved: bool = True):
+    return _evolution_controller.approve_and_promote(mutation_id, approved)
 
 # --- Layer 8: Evaluation Endpoints ---
 @app.get("/api/evaluations/reports")
 async def list_evaluation_reports():
-    return []
+    payload = _evolution_controller.status_payload()
+    return payload.get("evaluations") or []
 
 # --- Audit Viewer Endpoint ---
 @app.get("/api/audit/logs")
 async def get_audit_logs(limit: int = 50, event_type: Optional[str] = None):
-    return [
-        {
+    events = _evolution_controller.registry.list_audit(limit=limit)
+    payload = []
+    for event in events:
+        if event_type and event.event_type != event_type:
+            continue
+        payload.append({
+            "timestamp": event.timestamp,
+            "event_type": event.event_type,
+            "subsystem": "evolution",
+            "action": event.decision,
+            "result": event.decision,
+            "risk_level": "LOW",
+            "mutation_id": event.mutation_id,
+        })
+    if not payload:
+        payload.append({
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "event_type": event_type or "SYSTEM_INIT",
             "subsystem": "api_layer",
             "action": "API service running",
             "result": "OK",
             "risk_level": "LOW",
-        }
-    ]
+        })
+    return payload

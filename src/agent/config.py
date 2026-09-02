@@ -16,8 +16,14 @@ def get_data_dir() -> str:
     """
     Returns OS-appropriate writable data directory for persistent data, workspaces, and logs.
     Windows: %APPDATA%/Agent or AppData/Roaming/Agent
-    POSIX: data/ or ~/.local/share/agent
+    Packaged POSIX: ~/.local/share/agent
+    Development: ./data
     """
+    override = os.environ.get("AGENT_DATA_DIR")
+    if override:
+        os.makedirs(override, exist_ok=True)
+        return os.path.abspath(override)
+
     if sys.platform == "win32":
         appdata = os.environ.get("APPDATA")
         if appdata:
@@ -25,7 +31,13 @@ def get_data_dir() -> str:
             os.makedirs(path, exist_ok=True)
             return path
 
-    # Fallback to repository data directory or user home
+    # Packaged sidecar must not write into a read-only install directory
+    if getattr(sys, "frozen", False):
+        path = os.path.join(os.path.expanduser("~"), ".local", "share", "agent")
+        os.makedirs(path, exist_ok=True)
+        return path
+
+    # Fallback to repository data directory
     path = os.path.abspath("data")
     os.makedirs(path, exist_ok=True)
     return path

@@ -8,8 +8,14 @@ from agent.evolution.models import (
     EvolutionMode,
     CanaryStatus,
     Mutation,
+    EvolutionProposal,
+    CandidateRecord,
+    ProposalStatus,
+    CandidateStatus,
+    SignalType,
 )
 from agent.evolution.events import EvolutionEvent
+from agent.evolution.controller import EvolutionController
 
 __all__ = [
     "MutationTarget",
@@ -18,4 +24,10 @@ __all__ = [
     "CanaryStatus",
     "Mutation",
     "EvolutionEvent",
+    "EvolutionProposal",
+    "CandidateRecord",
+    "ProposalStatus",
+    "CandidateStatus",
+    "SignalType",
+    "EvolutionController",
 ]

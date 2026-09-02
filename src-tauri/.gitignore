@@ -1,0 +1,5 @@
+target/
+binaries/*
+!binaries/.gitkeep
+gen/
+WixTools/

@@ -4,15 +4,18 @@ Layer -1 Constitutional Invariant Guard & Boundary Enforcement.
 
 from typing import List, Dict, Any, Callable
 
+
 class ConstitutionalViolationError(PermissionError):
     """Exception raised when an action or mutation violates constitutional invariants."""
     pass
+
 
 class ConstitutionalInvariant:
     def __init__(self, name: str, description: str, check_fn: Callable[..., bool]):
         self.name = name
         self.description = description
         self.check_fn = check_fn
+
 
 class ConstitutionalGuard:
     """
@@ -32,6 +35,7 @@ class ConstitutionalGuard:
         "human_approval_authority",
         "evolution_controller_integrity",
         "constitutional_rules",
+        "evolution_boundaries",
     ]
 
     def __init__(self) -> None:
@@ -51,6 +55,20 @@ class ConstitutionalGuard:
                 name="human_approval_required_for_promotion",
                 description="Promotions require human approval authority",
                 check_fn=lambda action: not (action.get("type") == "promote" and not action.get("human_approved")),
+            )
+        )
+        self._invariants.append(
+            ConstitutionalInvariant(
+                name="evolution_controller_self_protection",
+                description="Evolution Control Plane cannot rewrite its own governance",
+                check_fn=lambda action: action.get("target") != "evolution_controller_integrity",
+            )
+        )
+        self._invariants.append(
+            ConstitutionalInvariant(
+                name="permission_ceiling_immutable",
+                description="Permission ceiling cannot be raised by evolution",
+                check_fn=lambda action: action.get("target") != "permission_ceiling",
             )
         )
 

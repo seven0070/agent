@@ -3,10 +3,10 @@
 Welcome agent. This file specifies the persistent architecture, development guidelines, boundaries, and rules for this repository.
 
 ## 1. Project Purpose & Long-Term Vision
-We are building a local-first AI agent for Windows capable of controlled **metamorphosis**: evolving internal capabilities, strategies, skills, routing, memory strategies, and agent composition through a tested versioning pipeline while preserving immutable constitutional boundaries.
+We are building a local-first AI agent capable of controlled **metamorphosis**: evolving internal capabilities, strategies, skills, routing, memory strategies, and agent composition through a tested versioning pipeline while preserving immutable constitutional boundaries.
 
 ## 2. Layered Architecture
-The system is built strictly layer-by-layer:
+The system is built strictly layer-by-layer. **Do not add Layers 11–15.**
 
 - **LAYER -1 — CONSTITUTION**: Immutable boundaries & invariants (identity, security, human approval, authority boundaries).
 - **LAYER 0 — FOUNDATION (Implemented)**: Environment, structure, config, structured logging, component versioning specifications, verification tools.
@@ -18,16 +18,15 @@ The system is built strictly layer-by-layer:
 - **LAYER 6 — JCODE CODING ENGINE (Implemented)**: `JcodeAdapter` (`@1jehuang/jcode-sdk` v1.1.0 harness protocol), `CodingTask`, `CodingResult`, `CodingWorkspaceRestrictor` path restriction, `JcodePermissionInterceptor`, `JcodeBridge`, `coding-engine-v1` tool wrapper.
 - **LAYER 7 — RUNTIME / SANDBOX (Implemented)**: `LocalAgentScopeRuntime`, `RuntimeSession` lifecycle, `RuntimeSandbox` process controls, workspace path traversal guards, `ResourceLimits` (timeouts, output caps), `NetworkPolicy` (`DENY`, `ALLOWLIST`), structured `RuntimeEvent` audit stream.
 - **LAYER 8 — EVALUATION / VERIFICATION (Implemented)**: `DeterministicEvaluator` (tool, coding, planning, safety categories), `MetricDimensions` (unaggregated scores + derived composite), `EvaluationThresholds`, `BaselineStore`, `RegressionComparator` (`IMPROVED`, `REGRESSED`), `EvaluationRunner` sandboxed execution, `EvaluationReport` (`PASS`, `FAIL`, `REVIEW`).
-- **LAYER 9 — EVOLUTION CONTROL PLANE (Planned)**: Independent control plane observing agent runs, generating candidates, testing mutations, managing rollbacks/promotions.
-- **LAYER 10 — UI / DESKTOP (Planned)**: Desktop user interface for Windows.
+- **LAYER 9 — EVOLUTION CONTROL PLANE (Implemented)**: Independent control plane. Observe signals, trigger proposals, create isolated candidates, implement via Jcode, sandbox via Layer 7, evaluate via Layer 8, promote through a constitutional gate, version, and rollback. Evolution cannot rewrite constitution, permission ceiling, or the Evolution Control Plane itself.
+- **LAYER 10 — UI / DESKTOP (Implemented)**: Tauri 2 desktop shell + React UI + local FastAPI backend. Packaged releases launch a PyInstaller sidecar; they do not require the user's Python or the source tree.
 
 ## 3. Strict Development Rules & Directives
 
 ### A. Layer Discipline
-- **DO NOT** implement future layers prematurely.
-- Build strictly **layer by layer**: Research → Design → Implement → Test → Verify → Document → Commit.
+- **DO NOT** implement future layers. Layers -1 through 10 are the complete architecture.
 - Never claim a layer is complete merely because code imports without error.
-- Stop after completing the assigned layer. Do not proceed to the next layer automatically.
+- Reuse existing Layer 6/7/8 implementations. Do not create a second coding engine, sandbox, or evaluator.
 
 ### B. Constitutional Invariants (Layer -1)
 - The agent framework and runtime code **CANNOT** modify constitutional rules, audit trails, human approval authority, or Evolution Controller boundaries.
@@ -55,6 +54,7 @@ The system is built strictly layer-by-layer:
 - Jcode is a specialized coding subsystem invoked by the Main Agent and does NOT replace the main AgentScope agent.
 - Jcode file operations and test executions MUST be restricted to the assigned workspace directory (`CodingWorkspaceRestrictor`).
 - Tool actions requested by Jcode must pass through `JcodePermissionInterceptor` and `ToolPermissionPolicy`.
+- Evolution uses Jcode to implement candidate artifacts. It does not create a second coding agent.
 
 ### H. Runtime & Sandbox Execution Boundaries (Layer 7)
 - Process execution MUST occur inside `RuntimeSandbox` with strict timeout limits (`timeout_seconds`), output buffer capping (`max_output_bytes`), and network policy checks (`NetworkPolicy.DENY`).
@@ -70,14 +70,22 @@ The system is built strictly layer-by-layer:
 - The **Evolution Controller** is **NOT** an internal execution layer within the agent.
 - It operates as an external control plane beside the agent.
 - Agent performs tasks; Evolution Controller observes, evaluates, and governs version candidate promotion or rollback.
+- Never mutate production source directly. Candidates live under `data/candidates/`. Promoted artifacts live under `data/generations/`.
+- Layer 9 cannot rewrite `src/agent/constitution.py` or `src/agent/evolution/`.
 
 ### K. Component Versioning Policy
 - All evolvable components (plans, coding engines, tools, skills, memory strategies, planners) must be explicitly versioned (e.g. `eval-run-001`, `benchmark-v1`, `coding-engine-v1`, `plan-v1`).
 - Mutations must generate new versioned candidates rather than overwriting existing source files directly.
 
+### L. Desktop Packaging
+- Production packaged execution must launch `agent-backend-<target-triple>` next to the application binary.
+- Python / `scripts/run_agent_backend.py` fallbacks are development-only (`debug_assertions`).
+- Do not claim macOS support unless CI builds and verifies a macOS artifact.
+
 ## 4. Engineering & Testing Practices
 - Use `pytest` for unit and integration tests (`PYTHONPATH=src pytest`).
-- Execute layer verification tools (`python scripts/verify_layer8.py`).
+- Execute layer verification tools (`python scripts/verify_layer9.py`, `python scripts/verify_layer10.py`, `python scripts/verify_packaging.py`).
 - Maintain minimal dependencies specified in `pyproject.toml`.
+- Requires Python >= 3.11.
 - All tests must run non-interactively without requiring external cloud services or long-running daemons.
 - Never commit secrets, API keys, or private tokens.

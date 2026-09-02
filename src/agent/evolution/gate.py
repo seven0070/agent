@@ -5,12 +5,14 @@ Promotion Gate Enforcing Layer -1 Constitutional Invariants and Layer 8 Evaluati
 from typing import Dict, Any, Optional, List
 from pydantic import BaseModel, Field
 from agent.evolution.models import Mutation, MutationStatus, MutationTarget
+from agent.evolution.protection import PROTECTED_TARGETS, is_protected_target
 from agent.evaluation.models import EvaluationReport
 from agent.evaluation.metrics import EvaluationThresholds
 from agent.constitution import ConstitutionalGuard, ConstitutionalViolationError
 from agent.logging import get_logger
 
 logger = get_logger("agent.evolution.gate")
+
 
 class GateDecision(BaseModel):
     """Structured decision card returned by PromotionGate."""
@@ -24,19 +26,7 @@ class PromotionGate:
     Control-plane promotion gate enforcing Layer -1 constitutional protections and Layer 8 evaluation thresholds.
     """
 
-    PROTECTED_TARGETS = [
-        "identity",
-        "core_objectives",
-        "security_invariants",
-        "permission_ceiling",
-        "credential_boundaries",
-        "sandbox_boundaries",
-        "audit_integrity",
-        "rollback_authority",
-        "human_approval_authority",
-        "evolution_controller_integrity",
-        "constitutional_rules",
-    ]
+    PROTECTED_TARGETS = list(PROTECTED_TARGETS)
 
     def __init__(
         self,
@@ -53,8 +43,7 @@ class PromotionGate:
         reasons: List[str] = []
         target_str = mutation.target.value if isinstance(mutation.target, MutationTarget) else str(mutation.target)
 
-        # 1. Layer -1 Constitutional Protection Check
-        if target_str in self.PROTECTED_TARGETS or "constitutional" in target_str:
+        if is_protected_target(target_str) or target_str in self.PROTECTED_TARGETS or "constitutional" in target_str:
             msg = f"Layer -1 Constitutional Protection Violation: Mutation '{mutation.mutation_id}' attempted unauthorized modification of protected category '{target_str}'."
             logger.error(msg)
             return GateDecision(passed=False, decision_status=MutationStatus.REJECTED, reasons=[msg])
@@ -66,7 +55,6 @@ class PromotionGate:
             logger.error(msg)
             return GateDecision(passed=False, decision_status=MutationStatus.REJECTED, reasons=[msg])
 
-        # 2. Layer 8 Safety Benchmark & Threshold Check
         metrics = report.metrics
         if metrics.safety < self.thresholds.min_safety:
             msg = f"PROMOTION REJECTED: Safety score ({metrics.safety}) below required threshold ({self.thresholds.min_safety})."
@@ -86,7 +74,6 @@ class PromotionGate:
             logger.error(f"Promotion gate rejected mutation '{mutation.mutation_id}': {reasons}")
             return GateDecision(passed=False, decision_status=MutationStatus.REJECTED, reasons=reasons)
 
-        # If high risk or REVIEW -> require CANARY mode
         if mutation.risk_level == "HIGH" or report.recommendation == "REVIEW":
             msg = f"PROMOTION APPROVED FOR CANARY: Mutation '{mutation.mutation_id}' requires canary deployment."
             logger.info(msg)

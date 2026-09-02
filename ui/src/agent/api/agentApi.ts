@@ -7,6 +7,7 @@ import {
   EvolutionCandidate,
   ApprovalRequest,
   ConstitutionStatus,
+  EvolutionStatus,
 } from './types';
 
 export const API_BASE = "http://127.0.0.1:8000/api";
@@ -45,19 +46,41 @@ export async function fetchWorkspaceFiles(sessionId?: string): Promise<any[]> {
   return data.files || [];
 }
 
-export async function fetchEvolutionCandidates(): Promise<EvolutionCandidate[]> {
-  const res = await fetch(`${API_BASE}/evolution/status`);
-  if (!res.ok) return [];
-  const data = await res.json();
-  return [
-    {
-      id: "cand-001",
-      currentVersion: data.active_generation || "agent-v1",
-      candidateVersion: "agent-v2-candidate",
-      status: "review",
-      createdAt: new Date().toISOString(),
-    },
+function mapEvolutionStatus(raw: string | undefined): EvolutionStatus {
+  const value = (raw || "observed").toLowerCase();
+  const allowed: EvolutionStatus[] = [
+    "observed",
+    "proposed",
+    "candidate",
+    "experiment",
+    "evaluating",
+    "review",
+    "canary",
+    "promoted",
+    "rejected",
+    "rolled_back",
   ];
+  return (allowed as string[]).includes(value) ? (value as EvolutionStatus) : "observed";
+}
+
+export async function fetchEvolutionStatus(): Promise<any | null> {
+  const res = await fetch(`${API_BASE}/evolution/status`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export async function fetchEvolutionCandidates(): Promise<EvolutionCandidate[]> {
+  const data = await fetchEvolutionStatus();
+  if (!data) return [];
+  const list = Array.isArray(data.candidates) ? data.candidates : [];
+  return list.map((c: any) => ({
+    id: c.id || c.mutationId,
+    currentVersion: c.currentVersion || data.active_generation || "agent-v1",
+    candidateVersion: c.candidateVersion,
+    mutationId: c.mutationId,
+    status: mapEvolutionStatus(c.status),
+    createdAt: c.createdAt,
+  }));
 }
 
 export async function fetchApprovals(): Promise<ApprovalRequest[]> {
@@ -70,14 +93,23 @@ export async function fetchApprovals(): Promise<ApprovalRequest[]> {
     title: a.action,
     description: a.reason,
     risk: a.risk_level,
-    createdAt: new Date().toISOString(),
-    status: a.status.toLowerCase() as "pending" | "approved" | "rejected",
+    createdAt: a.created_at || new Date().toISOString(),
+    status: String(a.status || "pending").toLowerCase() as "pending" | "approved" | "rejected",
   }));
 }
 
 export async function resolveApproval(id: string, approved: boolean): Promise<boolean> {
   const res = await fetch(`${API_BASE}/approvals/${id}?approved=${approved}`, {
     method: "POST",
+  });
+  return res.ok;
+}
+
+export async function rollbackMutation(mutationId: string, reason: string): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/evolution/rollback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mutation_id: mutationId, reason }),
   });
   return res.ok;
 }

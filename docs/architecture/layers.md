@@ -4,7 +4,7 @@ This document defines the scope, responsibilities, and current status of each la
 
 | Layer | Name | Description | Status |
 |---|---|---|---|
-| **Layer -1** | Constitution | Immutable safety constraints, identity, audit integrity, and human approval rules. | DEFINED (Foundation Invariants) |
+| **Layer -1** | Constitution | Immutable safety constraints, identity, audit integrity, and human approval rules. | **IMPLEMENTED** |
 | **Layer 0** | Foundation | Project structure, environment config, structured logging, component versioning specifications, verification suite. | **IMPLEMENTED** |
 | **Layer 1** | Agent Core | AgentScope 2.x agent lifecycle, adapter boundary, session management, structured AgentResult, agent-v1. | **IMPLEMENTED** |
 | **Layer 2** | Intelligence / Models | Model adapters, LLM routing, token management, model failovers, ModelRouter. | **IMPLEMENTED** |
@@ -14,5 +14,7 @@ This document defines the scope, responsibilities, and current status of each la
 | **Layer 6** | Jcode Coding Engine | JcodeAdapter (@1jehuang/jcode-sdk v1.1.0), CodingTask, CodingResult, CodingWorkspaceRestrictor, JcodePermissionInterceptor, JcodeBridge, coding-engine-v1 tool. | **IMPLEMENTED** |
 | **Layer 7** | Runtime / Sandbox | LocalAgentScopeRuntime, RuntimeSession lifecycle, RuntimeSandbox, path traversal guards, ResourceLimits, NetworkPolicy (DENY/ALLOWLIST), RuntimeEvent audit. | **IMPLEMENTED** |
 | **Layer 8** | Evaluation / Verification | DeterministicEvaluator, MetricDimensions, EvaluationThresholds, BaselineStore, RegressionComparator, EvaluationRunner, EvaluationReport. | **IMPLEMENTED** |
-| **Layer 9** | Evolution Control Plane | Out-of-band observer, mutation proposal engine, candidate generator, promotion/rollback controller. | PLANNED |
-| **Layer 10** | UI / Desktop | Native Windows application interface for human user interaction and approval. | PLANNED |
+| **Layer 9** | Evolution Control Plane | Observer, trigger, structured proposals, isolated candidates, Jcode implementation, Layer 7 sandbox, Layer 8 evaluation, promotion gate, versioning, rollback, audit. | **IMPLEMENTED** |
+| **Layer 10** | UI / Desktop | Tauri 2 shell, React UI, local FastAPI API, packaged PyInstaller sidecar for Windows x64 and Linux x64. | **IMPLEMENTED** |
+
+Layers 11–15 do not exist and must not be added.

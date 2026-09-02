@@ -27,6 +27,14 @@ class RuleBasedPlanner:
         tasks: Dict[str, PlanTask] = {}
 
         goal_lower = goal.lower()
+        strategy: Dict[str, Any] = {}
+        try:
+            from agent.evolution.generation import load_active_planner_strategy
+            strategy = load_active_planner_strategy() or {}
+        except Exception:
+            strategy = {}
+        extra_retries = int((strategy.get("proposed_changes") or {}).get("strategy_patch", {}).get("max_retries") or 2)
+
 
         # Goal Pattern 1: Coding / Software Engineering Task
         if any(keyword in goal_lower for keyword in ["code", "python module", "function", "edit file", "create test", "jcode"]):
@@ -36,6 +44,8 @@ class RuleBasedPlanner:
                 dependencies=[],
                 required_tool_id="coding-engine-v1",
                 inputs={"goal": goal},
+                max_retries=extra_retries,
+
             )
             tasks[t1.id] = t1
 

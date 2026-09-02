@@ -18,6 +18,7 @@ from agent.logging import get_logger
 
 logger = get_logger("agent.coding.jcode.adapter")
 
+
 class JcodeAdapter(CodingEngineInterface):
     """
     Adapter bridging Main Agent to Jcode specialized coding engine.
@@ -54,7 +55,6 @@ class JcodeAdapter(CodingEngineInterface):
 
         self._emit_event("session_started", session_id, task.task_id, {"workspace": task.workspace_dir})
 
-        # 1. Security & Permission Check for Write Operations
         write_perm = self.permission_interceptor.evaluate_tool_request("write_file", task.goal)
         if write_perm == PermissionLevel.DENY:
             self._emit_event("error", session_id, task.task_id, {"error": "Permission Denied"})
@@ -71,8 +71,29 @@ class JcodeAdapter(CodingEngineInterface):
 
         try:
             workspace_root = self.workspace_restrictor.workspace_dir
+            explicit_files: Dict[str, str] = (task.metadata or {}).get("files") or {}
 
-            if "python module" in task.goal.lower() or "create" in task.goal.lower() or "file" in task.goal.lower() or "code" in task.goal.lower():
+            if explicit_files:
+                for rel_path, content in explicit_files.items():
+                    abs_path = self.workspace_restrictor.validate_and_resolve(rel_path)
+                    os.makedirs(os.path.dirname(abs_path) or workspace_root, exist_ok=True)
+                    with open(abs_path, "w", encoding="utf-8") as handle:
+                        handle.write(content)
+                    files_changed.append(rel_path.replace("\\", "/"))
+                    self._emit_event(
+                        "tool_executed",
+                        session_id,
+                        task.task_id,
+                        {"action": "create_file", "file": rel_path},
+                    )
+                self.bridge.execute_bridge_session(
+                    {
+                        "task_id": task.task_id,
+                        "workspace_dir": workspace_root,
+                        "files_to_create": files_changed,
+                    }
+                )
+            elif "python module" in task.goal.lower() or "create" in task.goal.lower() or "file" in task.goal.lower() or "code" in task.goal.lower():
                 mod_path = self.workspace_restrictor.validate_and_resolve("math_module.py")
                 test_path = self.workspace_restrictor.validate_and_resolve("test_math_module.py")
 
@@ -92,8 +113,11 @@ class JcodeAdapter(CodingEngineInterface):
 
             if task.test_command:
                 self._emit_event("tool_started", session_id, task.task_id, {"action": "run_tests", "command": task.test_command})
+                cmd = [task.test_command]
+                if task.test_command == "pytest":
+                    cmd = [task.test_command, "test_math_module.py"]
                 test_proc = subprocess.run(
-                    [task.test_command, "test_math_module.py"],
+                    cmd,
                     cwd=workspace_root,
                     capture_output=True,
                     text=True,

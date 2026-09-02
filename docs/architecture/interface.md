@@ -54,7 +54,7 @@ The UI and API layer **MUST NEVER**:
 ## 2. Desktop Stack & Service Boundary
 
 ### Technology Selection
-- **Desktop Shell**: Tauri 2 (Rust) providing lightweight native desktop window management, low memory footprint, and cross-platform native OS integration (Windows, macOS, Linux).
+- **Desktop Shell**: Tauri 2 (Rust) providing lightweight native desktop window management. Packaged and verified on Windows x64 and Linux x64. macOS is not claimed.
 - **Frontend SPA**: React 18 + TypeScript + Vite + Tailwind CSS.
 - **Backend API**: FastAPI / Starlette local HTTP server (`127.0.0.1`) with SSE (Server-Sent Events) streaming.
 - **Communication Protocol**: Local REST endpoints for CRUD/commands, SSE stream `/api/chat/stream` for real-time agent thoughts, plan step updates, tool execution cards, and system audit events.

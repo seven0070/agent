@@ -7,10 +7,11 @@ export const EvaluationResults: React.FC<{ summary?: EvaluationSummary }> = ({ s
       <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#38bdf8', marginBottom: '8px' }}>EVALUATION BENCHMARK METRICS</div>
       {summary ? (
         <div style={{ fontSize: '12px', color: '#cbd5e1' }}>
-          Correctness: +8.2% | Reliability: +5.1% | Latency: -3.4%
+          Status: {summary.status.toUpperCase()} | Correctness: {summary.metrics.correctness ?? 'n/a'} | Safety: {summary.metrics.safety ?? 'n/a'}
+          {summary.regressions?.length ? ` | Regressions: ${summary.regressions.join(', ')}` : ' | No regressions'}
         </div>
       ) : (
-        <div style={{ fontSize: '11px', color: '#64748b' }}>Benchmark evaluation results PASS across 4 dataset suites.</div>
+        <div style={{ fontSize: '11px', color: '#64748b' }}>No candidate evaluation has been recorded yet.</div>
       )}
     </div>
   );

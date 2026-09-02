@@ -1,46 +1,32 @@
-# Windows Build & Packaging Instructions — Sovereign Agent OS
+# Windows Build & Packaging Instructions
 
 ## 1. Prerequisites (Windows Machine)
-To build the native Windows installer `.msi` or `.exe` for Sovereign Agent OS:
 
-1. **Node.js**: Install Node.js v20+ and `npm` or `pnpm`.
-2. **Rust & Cargo**: Install Rust via rustup.rs (x86_64-pc-windows-msvc target).
-3. **C++ Build Tools**: Install Microsoft Visual Studio C++ Build Tools.
-4. **Python**: Install Python 3.10+ (x64) and ensure `python` / `pip` are on PATH.
+1. **Node.js** v20+
+2. **Rust** via rustup (`x86_64-pc-windows-msvc`)
+3. **C++ Build Tools** (Visual Studio)
+4. **Python 3.11+** — required to *build* the sidecar, not to *run* the installed app
 
----
+## 2. Development
 
-## 2. Windows Development Build Steps
+```bash
+pip install -e ".[dev]"
+cd ui && npm install
+python -m agent.api.main --port 8000
+npx --prefix ui tauri dev
+```
 
-1. Clone repository & install Python agent package:
-   pip install -e .
+## 3. Production installer
 
-2. Install UI dependencies:
-   cd ui && npm install
+```bash
+python scripts/build_backend_sidecar.py --triple x86_64-pc-windows-msvc
+npx --prefix ui tauri build
+```
 
-3. Start local API backend service:
-   python -m uvicorn agent.api.app:app --port 8000
+The Windows installer is emitted under `src-tauri/target/release/bundle/` as `Agent_0.1.0_x64_en-US.msi` (and NSIS). The bundled sidecar is `agent-backend-x86_64-pc-windows-msvc.exe`. The installed application does not use `scripts/run_agent_backend.py` or a system Python.
 
-4. Run Tauri desktop app in dev mode:
-   cd ui && npm run tauri dev
+## 4. Verification
 
----
-
-## 3. Production Installer Packaging (Windows)
-
-Build standalone Windows installer package (.msi):
-cd ui && npm run tauri build
-
-The resulting installer package will be output to: `src-tauri/target/release/bundle/msi/SovereignAgentOS_0.1.0_x64_en-US.msi`.
-
----
-
-## 4. Verification & Validation Requirements (Linux VM vs Windows Native)
-- **Linux VM Validation (Jules Environment)**:
-  - Backend FastAPI endpoints and SSE streaming verified (`pytest tests/`).
-  - React SPA structure verified.
-  - Tauri config schemas verified against Tauri 2 specs.
-- **Windows Native Machine Validation**:
-  - Launch `.msi` installer on Windows 11 x64.
-  - Verify local sidecar process startup for Python backend service.
-  - Verify native WebView2 rendering and local SSE stream connection.
+- Linux CI: pytest, layer verification, PyInstaller sidecar, Linux Tauri bundle (deb/AppImage)
+- Windows CI: pytest, PyInstaller sidecar, MSI/NSIS Tauri bundle
+- macOS is not built or claimed

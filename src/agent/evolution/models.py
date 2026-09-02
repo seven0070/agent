@@ -7,6 +7,7 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 
+
 class MutationTarget(str, Enum):
     """Target component categories eligible for evolution."""
     PLANNER_STRATEGY = "planner_strategy"
@@ -19,6 +20,7 @@ class MutationTarget(str, Enum):
     PROTECTED_CONSTITUTION = "constitutional_rules"  # Target used for testing constitutional attack rejection
     CONSTITUTIONAL_RULES = "constitutional_rules"
 
+
 class MutationStatus(str, Enum):
     """Lifecycle state of a proposed mutation."""
     PROPOSED = "PROPOSED"
@@ -28,6 +30,7 @@ class MutationStatus(str, Enum):
     PROMOTED = "PROMOTED"
     REJECTED = "REJECTED"
     ROLLED_BACK = "ROLLED_BACK"
+
 
 class EvolutionMode(str, Enum):
     """Operational mode governing metamorphosis automation level."""
@@ -39,6 +42,7 @@ class EvolutionMode(str, Enum):
     AUTOMATIC = "AUTOMATIC"
     AUTOMATED = "AUTOMATED"
 
+
 class CanaryStatus(str, Enum):
     """Status of active canary monitoring."""
     PENDING = "PENDING"
@@ -46,6 +50,45 @@ class CanaryStatus(str, Enum):
     REGRESSED = "REGRESSED"
     FAILED = "FAILED"
     COMPLETED = "COMPLETED"
+
+
+class SignalType(str, Enum):
+    """Observable improvement signals consumed by the Evolution Observer."""
+    TASK_FAILURE = "task_failure"
+    REPEATED_FAILURE = "repeated_failure"
+    EVALUATION_REGRESSION = "evaluation_regression"
+    CAPABILITY_GAP = "capability_gap"
+    TOOL_FAILURE = "tool_failure"
+    PLANNING_FAILURE = "planning_failure"
+    RELIABILITY_DEGRADATION = "reliability_degradation"
+    PERFORMANCE_DEGRADATION = "performance_degradation"
+
+
+class ProposalStatus(str, Enum):
+    """Lifecycle of a structured evolution proposal."""
+    OPEN = "OPEN"
+    REJECTED = "REJECTED"
+    IMPLEMENTING = "IMPLEMENTING"
+    EVALUATING = "EVALUATING"
+    AWAITING_APPROVAL = "AWAITING_APPROVAL"
+    APPROVED = "APPROVED"
+    PROMOTED = "PROMOTED"
+    ROLLED_BACK = "ROLLED_BACK"
+
+
+class CandidateStatus(str, Enum):
+    """Lifecycle of an isolated candidate generation."""
+    CREATED = "CREATED"
+    IMPLEMENTING = "IMPLEMENTING"
+    IMPLEMENTED = "IMPLEMENTED"
+    IMPLEMENTATION_FAILED = "IMPLEMENTATION_FAILED"
+    EVALUATING = "EVALUATING"
+    EVALUATED = "EVALUATED"
+    PROMOTED = "PROMOTED"
+    REJECTED = "REJECTED"
+    ROLLED_BACK = "ROLLED_BACK"
+    CLEANED = "CLEANED"
+
 
 class Mutation(BaseModel):
     """
@@ -69,3 +112,36 @@ class Mutation(BaseModel):
         description="ISO 8601 creation timestamp",
     )
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Custom metadata")
+
+
+class EvolutionProposal(BaseModel):
+    """Structured evolution proposal produced from an observed capability gap."""
+    proposal_id: str
+    mutation_id: Optional[str] = None
+    detected_problem: str
+    evidence: Dict[str, Any] = Field(default_factory=dict)
+    affected_capability: str
+    proposed_change: Dict[str, Any] = Field(default_factory=dict)
+    expected_improvement: str = ""
+    risk: str = "LOW"
+    required_permissions: List[str] = Field(default_factory=list)
+    evaluation_criteria: Dict[str, Any] = Field(default_factory=dict)
+    status: ProposalStatus = ProposalStatus.OPEN
+    parent_version: str = "agent-v1"
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    updated_at: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class CandidateRecord(BaseModel):
+    """Isolated candidate generation metadata."""
+    candidate_id: str
+    proposal_id: str
+    mutation_id: Optional[str] = None
+    parent_version: str
+    candidate_version: str
+    workspace_dir: str
+    status: CandidateStatus = CandidateStatus.CREATED
+    files_changed: List[str] = Field(default_factory=list)
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    metadata: Dict[str, Any] = Field(default_factory=dict)

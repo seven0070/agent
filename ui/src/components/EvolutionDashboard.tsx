@@ -24,6 +24,14 @@ export const EvolutionDashboard: React.FC = () => {
             <div style={{ fontSize: '12px', color: '#94a3b8' }}>Active Generation</div>
             <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#10b981' }}>{evoStatus.active_generation}</div>
           </div>
+          <div style={{ background: '#0f172a', padding: '12px', borderRadius: '6px' }}>
+            <div style={{ fontSize: '12px', color: '#94a3b8' }}>Pending Mutations</div>
+            <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#f59e0b' }}>{evoStatus.pending_mutations ?? 0}</div>
+          </div>
+          <div style={{ background: '#0f172a', padding: '12px', borderRadius: '6px' }}>
+            <div style={{ fontSize: '12px', color: '#94a3b8' }}>Promotion Gate</div>
+            <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#e2e8f0' }}>{evoStatus.gate?.decision || 'IDLE'}</div>
+          </div>
         </div>
       ) : (
         <div style={{ color: '#94a3b8', fontSize: '13px' }}>Loading Evolution Controller state...</div>
