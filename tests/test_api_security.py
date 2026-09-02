@@ -43,3 +43,14 @@ def test_security_sandbox_path_traversal_prevention():
     assert "workspace_root" in data
     assert "data/workspace" in data["workspace_root"]
     assert "../" not in data["workspace_root"]
+
+
+def test_security_workspace_file_path_traversal_attack():
+    """Verifies /api/workspace/files rejects path traversal payloads in session_id."""
+    res = client.get("/api/workspace/files?session_id=../../../../etc")
+    assert res.status_code == 200
+    data = res.json()
+    assert "data/workspace" in data["workspace_root"]
+    for f in data["files"]:
+        assert not f["path"].startswith("/")
+        assert ".." not in f["path"]

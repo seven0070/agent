@@ -148,15 +148,28 @@ async def delete_session(session_id: str):
 # --- OpenHands File Explorer & Workspace Endpoints ---
 @app.get("/api/workspace/files")
 async def list_workspace_files(session_id: Optional[str] = None):
-    """Returns dynamic file tree for the active session's workspace directory."""
-    workspace_root = os.path.abspath("data/workspace")
-    os.makedirs(workspace_root, exist_ok=True)
+    """Returns dynamic file tree for the active session's workspace directory with path traversal protection."""
+    base_root = os.path.realpath("data/workspace")
+    os.makedirs(base_root, exist_ok=True)
+
+    target_root = base_root
+    if session_id:
+        # Sanitize session_id to prevent path traversal
+        clean_sid = os.path.basename(session_id)
+        candidate_root = os.path.realpath(os.path.join(base_root, clean_sid))
+        if candidate_root.startswith(base_root) and os.path.exists(candidate_root):
+            target_root = candidate_root
 
     files_list = []
-    for root, dirs, filenames in os.walk(workspace_root):
+    for root, dirs, filenames in os.walk(target_root):
+        real_root = os.path.realpath(root)
+        if not real_root.startswith(base_root):
+            continue  # Path traversal guard
         for f in filenames:
-            rel_path = os.path.relpath(os.path.join(root, f), workspace_root)
-            full_p = os.path.join(root, f)
+            full_p = os.path.realpath(os.path.join(real_root, f))
+            if not full_p.startswith(base_root):
+                continue  # Symlink/traversal guard
+            rel_path = os.path.relpath(full_p, base_root)
             files_list.append({
                 "id": rel_path,
                 "name": f,
