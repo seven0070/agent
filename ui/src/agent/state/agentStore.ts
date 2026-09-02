@@ -1,5 +1,6 @@
 /**
- * Dynamic Agent State Store managing active sessions, workspace files, and event streams.
+ * Dynamic Agent State Store managing active sessions, workspace files,
+ * runtime startup lifecycle, and event streams.
  */
 
 import {
@@ -18,7 +19,10 @@ import {
   fetchWorkspaceFiles,
 } from '../api/agentApi';
 
+export type DesktopRuntimeStatus = 'STARTING' | 'READY' | 'FAILED' | 'STOPPING' | 'STOPPED';
+
 export interface AgentState {
+  runtimeStatus: DesktopRuntimeStatus;
   activeSessionId: string | null;
   activeTab: 'missions' | 'evolution' | 'trust' | 'coding' | 'runtime' | 'memory' | 'approvals' | 'system';
   overlayOpen: boolean;
@@ -31,6 +35,7 @@ export interface AgentState {
 
 class AgentStore {
   private state: AgentState = {
+    runtimeStatus: 'READY',
     activeSessionId: null,
     activeTab: 'missions',
     overlayOpen: true,
@@ -54,6 +59,11 @@ class AgentStore {
 
   private notify(): void {
     this.listeners.forEach((fn) => fn());
+  }
+
+  public setRuntimeStatus(status: DesktopRuntimeStatus): void {
+    this.state.runtimeStatus = status;
+    this.notify();
   }
 
   public setActiveTab(tab: AgentState['activeTab']): void {
@@ -101,9 +111,11 @@ class AgentStore {
       this.state.evolutionCandidates = candidates;
       this.state.approvals = approvals;
       this.state.constitution = constStatus;
+      this.state.runtimeStatus = 'READY';
       this.notify();
     } catch {
-      // API Offline fallback
+      this.state.runtimeStatus = 'FAILED';
+      this.notify();
     }
   }
 

@@ -4,6 +4,8 @@ Ensures API layer cannot bypass Layer -1 Constitution, Layer 4 permissions, or L
 """
 
 import pytest
+import sys
+import os
 from fastapi.testclient import TestClient
 from agent.api.app import app
 
@@ -67,3 +69,9 @@ def test_security_backend_localhost_binding_and_health_contract():
     settings = get_settings()
     assert settings.agent_version == "0.1.0"
     assert settings.agent_env is not None
+
+def test_security_backend_health_wait_contract():
+    """Verifies health check endpoint readiness contract."""
+    res = client.get("/health")
+    assert res.status_code == 200
+    assert res.json()["status"] == "online"

@@ -1,9 +1,11 @@
 """
 Standalone Desktop Agent Backend Launcher Script.
-Launches the FastAPI backend server on localhost for desktop shell execution with health wait contract.
+Launches the FastAPI backend server on localhost for desktop shell execution with health wait contract
+and dynamic port CLI parameters.
 """
 
 import sys
+import argparse
 import time
 import urllib.request
 import uvicorn
@@ -28,9 +30,14 @@ def wait_for_health(host: str = "127.0.0.1", port: int = 8000, timeout_seconds: 
     return False
 
 def main():
+    parser = argparse.ArgumentParser(description="Agent Desktop Backend Server Launcher")
+    parser.add_argument("--port", type=int, default=8000, help="Port to bind (default: 8000)")
+    parser.add_argument("--host", type=str, default="127.0.0.1", help="Host address (default: 127.0.0.1)")
+    args = parser.parse_args()
+
     settings = get_settings()
-    host = "127.0.0.1"
-    port = 8000
+    host = args.host if args.host == "127.0.0.1" else "127.0.0.1"  # Force localhost security boundary
+    port = args.port
 
     logger.info(f"Starting Agent Backend Server v{settings.agent_version} on http://{host}:{port} (Data Dir: {settings.data_dir})")
 
