@@ -27,17 +27,21 @@ export const AgentOverlay: React.FC = () => {
     });
   }, []);
 
-  const handleCommand = (cmd: string) => {
-    // Send command
+  const handleCommand = async (cmd: string) => {
+    let sid = state.activeSessionId;
+    if (!sid) {
+      sid = await agentStore.createNewSession();
+    }
+
     fetch('http://127.0.0.1:8000/api/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_id: 'sess-overlay', prompt: cmd }),
+      body: JSON.stringify({ session_id: sid, prompt: cmd }),
     });
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', background: '#020617' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', background: 'rgba(2, 6, 23, 0.95)' }}>
       {/* Header Bar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 20px', background: '#0f172a', borderBottom: '1px solid #334155' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -46,13 +50,24 @@ export const AgentOverlay: React.FC = () => {
           <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '12px', background: '#1e293b', color: '#38bdf8', border: '1px solid #0284c7' }}>
             Sovereign OS Active
           </span>
+          {state.activeSessionId && (
+            <span style={{ fontSize: '11px', color: '#64748b' }}>Active Session: {state.activeSessionId}</span>
+          )}
         </div>
-        <button
-          onClick={() => agentStore.toggleOverlay()}
-          style={{ padding: '6px 12px', borderRadius: '4px', background: '#334155', color: '#f8fafc', border: 'none', cursor: 'pointer', fontSize: '12px' }}
-        >
-          {state.overlayOpen ? 'Hide Overlay' : 'Show Overlay'}
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            onClick={() => agentStore.createNewSession()}
+            style={{ padding: '6px 12px', borderRadius: '4px', background: '#0284c7', color: '#f8fafc', border: 'none', cursor: 'pointer', fontSize: '12px' }}
+          >
+            + New Mission
+          </button>
+          <button
+            onClick={() => agentStore.toggleOverlay()}
+            style={{ padding: '6px 12px', borderRadius: '4px', background: '#334155', color: '#f8fafc', border: 'none', cursor: 'pointer', fontSize: '12px' }}
+          >
+            {state.overlayOpen ? 'Hide Overlay' : 'Show Overlay'}
+          </button>
+        </div>
       </div>
 
       {state.overlayOpen && (

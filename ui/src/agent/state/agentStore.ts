@@ -1,5 +1,5 @@
 /**
- * Agent State Management Store for Overlay UI.
+ * Dynamic Agent State Store managing active sessions and event streams.
  */
 
 import {
@@ -14,9 +14,11 @@ import {
   fetchApprovals,
   resolveApproval as resolveApprovalApi,
   fetchConstitutionStatus,
+  createSession as createSessionApi,
 } from '../api/agentApi';
 
 export interface AgentState {
+  activeSessionId: string | null;
   activeTab: 'missions' | 'evolution' | 'trust' | 'coding' | 'runtime' | 'memory' | 'approvals' | 'system';
   overlayOpen: boolean;
   missions: AgentMission[];
@@ -27,6 +29,7 @@ export interface AgentState {
 
 class AgentStore {
   private state: AgentState = {
+    activeSessionId: null,
     activeTab: 'missions',
     overlayOpen: true,
     missions: [],
@@ -55,9 +58,21 @@ class AgentStore {
     this.notify();
   }
 
+  public setActiveSessionId(sessionId: string): void {
+    this.state.activeSessionId = sessionId;
+    this.notify();
+  }
+
   public toggleOverlay(): void {
     this.state.overlayOpen = !this.state.overlayOpen;
     this.notify();
+  }
+
+  public async createNewSession(title?: string): Promise<string> {
+    const session = await createSessionApi(title);
+    this.state.activeSessionId = session.session_id;
+    await this.loadAll();
+    return session.session_id;
   }
 
   public async loadAll(): Promise<void> {
@@ -69,6 +84,9 @@ class AgentStore {
         fetchConstitutionStatus(),
       ]);
       this.state.missions = missions;
+      if (missions.length > 0 && !this.state.activeSessionId) {
+        this.state.activeSessionId = missions[0].id;
+      }
       this.state.evolutionCandidates = candidates;
       this.state.approvals = approvals;
       this.state.constitution = constStatus;
