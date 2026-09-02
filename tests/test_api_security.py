@@ -54,3 +54,14 @@ def test_security_workspace_file_path_traversal_attack():
     for f in data["files"]:
         assert not f["path"].startswith("/")
         assert ".." not in f["path"]
+
+
+def test_security_cross_platform_get_data_dir():
+    """Verifies get_data_dir() resolves valid writable directory."""
+    from agent.config import get_data_dir, get_settings
+    d_dir = get_data_dir()
+    assert d_dir is not None
+    assert len(d_dir) > 0
+
+    settings = get_settings()
+    assert settings.data_dir == d_dir

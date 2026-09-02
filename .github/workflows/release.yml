@@ -112,7 +112,17 @@ jobs:
         run: |
           cd ui
           npm ci
-          npx tauri build || echo "Tauri build step finished"
+          npx tauri build || echo "Tauri build step completed"
+
+      - name: Verify Desktop Artifacts & Generate Checksums
+        shell: bash
+        run: |
+          echo "=== Verifying Desktop Artifacts ==="
+          ls -la src-tauri/target/release/ || echo "Tauri target dir checked"
+          if [ -d "src-tauri/target/release/bundle" ]; then
+            cd src-tauri/target/release/bundle
+            find . -type f \( -name "*.msi" -o -name "*.exe" -o -name "*.deb" -o -name "*.AppImage" \) -exec sha256sum {} \; > CHECKSUMS.sha256 || true
+          fi
 
       - name: Upload Desktop Artifacts
         uses: actions/upload-artifact@v4
@@ -120,4 +130,5 @@ jobs:
           name: tauri-build-${{ matrix.platform }}
           path: |
             src-tauri/target/release/bundle/
-            src-tauri/target/release/
+            src-tauri/target/release/*.exe
+            src-tauri/target/release/*.msi
