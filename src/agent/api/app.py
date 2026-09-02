@@ -23,14 +23,16 @@ from agent.orchestration.orchestrator import PlanOrchestrator
 from agent.capabilities.broker import CapabilityBroker
 from agent.capabilities.permissions import ToolPermissionPolicy
 from agent.constitution import ConstitutionalGuard, ConstitutionalViolationError
+from agent.config import get_settings
 from agent.logging import get_logger
 
 logger = get_logger("agent.api.app")
+settings = get_settings()
 
 app = FastAPI(
     title="Sovereign Agent Local API",
     description="Layer 10 Service Boundary over Layers 0-9 with OpenHands Workspace Integration",
-    version="0.1.0",
+    version=settings.agent_version,
 )
 
 # CORS configuration restricted to local desktop shell and dev server
@@ -68,6 +70,8 @@ async def get_health():
     return {
         "status": "online",
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "version": settings.agent_version,
+        "data_dir": settings.data_dir,
         "layers": {
             "constitution": "active",
             "agent_core": "active",
@@ -149,12 +153,11 @@ async def delete_session(session_id: str):
 @app.get("/api/workspace/files")
 async def list_workspace_files(session_id: Optional[str] = None):
     """Returns dynamic file tree for the active session's workspace directory with path traversal protection."""
-    base_root = os.path.realpath("data/workspace")
+    base_root = os.path.realpath(os.path.join(settings.data_dir, "workspace"))
     os.makedirs(base_root, exist_ok=True)
 
     target_root = base_root
     if session_id:
-        # Sanitize session_id to prevent path traversal
         clean_sid = os.path.basename(session_id)
         candidate_root = os.path.realpath(os.path.join(base_root, clean_sid))
         if candidate_root.startswith(base_root) and os.path.exists(candidate_root):
@@ -179,7 +182,7 @@ async def list_workspace_files(session_id: Optional[str] = None):
                 "modified_at": datetime.fromtimestamp(os.path.getmtime(full_p), timezone.utc).isoformat(),
             })
 
-    return {"workspace_root": "data/workspace", "files": files_list}
+    return {"workspace_root": base_root, "files": files_list}
 
 # --- Sovereign Chat Streaming Endpoint ---
 @app.post("/api/chat/stream")
@@ -258,7 +261,7 @@ async def list_pending_approvals():
             "approval_id": "appr-001",
             "source_layer": "Layer 4 Capabilities",
             "action": "write_file",
-            "resource": "data/workspace/config.json",
+            "resource": os.path.join(settings.data_dir, "workspace", "config.json"),
             "risk_level": "MEDIUM",
             "reason": "Modify configuration parameters",
             "status": "PENDING",
@@ -281,7 +284,7 @@ async def get_coding_workspace():
     return {
         "status": "idle",
         "active_task": None,
-        "workspace_root": "data/workspace",
+        "workspace_root": os.path.join(settings.data_dir, "workspace"),
         "changed_files": [],
         "last_test_run": {"passed": 17, "failed": 0, "status": "PASS"},
     }
