@@ -267,11 +267,11 @@ jobs:
             exit 1
           fi
           if command -v sha256sum >/dev/null; then
-            printf '%s\n' "${files[@]}" | xargs sha256sum > CHECKSUMS.sha256
+            printf '%s\n' "${files[@]}" | xargs sha256sum > CHECKSUMS-${{ matrix.platform }}.sha256
           else
-            printf '%s\n' "${files[@]}" | xargs shasum -a 256 > CHECKSUMS.sha256
+            printf '%s\n' "${files[@]}" | xargs shasum -a 256 > CHECKSUMS-${{ matrix.platform }}.sha256
           fi
-          cat CHECKSUMS.sha256
+          cat CHECKSUMS-${{ matrix.platform }}.sha256
 
       - name: Upload Desktop Artifacts
         uses: actions/upload-artifact@v4
@@ -298,7 +298,12 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: release-artifacts/**/*
+          files: |
+            release-artifacts/**/*.msi
+            release-artifacts/**/*.exe
+            release-artifacts/**/*.deb
+            release-artifacts/**/*.AppImage
+            release-artifacts/**/*.sha256
           draft: false
           prerelease: false
           generate_release_notes: true
