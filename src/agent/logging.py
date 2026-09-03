@@ -53,13 +53,23 @@ class StructuredJSONFormatter(logging.Formatter):
 
         return json.dumps(log_entry)
 
+class _SafeStreamHandler(logging.StreamHandler):
+    """Ignore writes after the test client / process has closed stdout."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            super().emit(record)
+        except (ValueError, OSError):
+            return
+
+
 def get_logger(name: str = "agent", level: str = "INFO") -> logging.Logger:
     """Configures and returns a structured logger."""
     logger = logging.getLogger(name)
     logger.setLevel(getattr(logging, level.upper(), logging.INFO))
 
     if not logger.handlers:
-        handler = logging.StreamHandler(sys.stdout)
+        handler = _SafeStreamHandler(sys.stdout)
         handler.setFormatter(StructuredJSONFormatter())
         logger.addHandler(handler)
         logger.propagate = False

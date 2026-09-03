@@ -53,7 +53,7 @@ async def main() -> int:
         )
         assert mut.mutation_id.startswith("mut-"), "Mutation ID should start with mut-"
         assert registry.get_mutation(mut.mutation_id) is not None, "Mutation should be saved in registry"
-        print(f"  ✓ Created and persisted mutation '{mut.mutation_id}' for '{mut.target.value}'")
+        print(f"  [OK] Created and persisted mutation '{mut.mutation_id}' for '{mut.target.value}'")
 
         # 2. Verify Observer & Weakness Detection
         print("[2/8] Verifying Evolution Observer & Weakness Analysis...")
@@ -65,7 +65,7 @@ async def main() -> int:
         weaknesses = observer.identify_weaknesses(failure_threshold=0.5)
         assert len(weaknesses) == 1, f"Expected 1 weakness, got {len(weaknesses)}"
         assert weaknesses[0]["target"] == "planner_strategy", "Target should map to planner_strategy"
-        print(f"  ✓ Identified weakness in '{weaknesses[0]['target']}' (failure rate: {weaknesses[0]['failure_rate']:.2f})")
+        print(f"  [OK] Identified weakness in '{weaknesses[0]['target']}' (failure rate: {weaknesses[0]['failure_rate']:.2f})")
 
         # 3. Verify Layer -1 Constitutional Protection in Promotion Gate
         print("[3/8] Verifying Promotion Gate Constitutional Rejection...")
@@ -88,7 +88,7 @@ async def main() -> int:
         )
         gate_decision = gate.evaluate(mutation=attack_mut, report=dummy_report)
         assert not gate_decision.passed, "Promotion Gate must reject attack on constitutional rules"
-        print(f"  ✓ Promotion Gate rejected constitutional attack: {gate_decision.reasons[0]}")
+        print(f"  [OK] Promotion Gate rejected constitutional attack: {gate_decision.reasons[0]}")
 
         # 4. Verify Canary & Rollback Engine
         print("[4/8] Verifying Canary Management & Rollback Engine...")
@@ -113,7 +113,7 @@ async def main() -> int:
         rollback_engine.rollback_mutation(mutation=valid_mut, reason="Excessive canary latency and errors")
         assert valid_mut.status == MutationStatus.ROLLED_BACK, "Mutation should be marked ROLLED_BACK"
         assert registry.get_active_generation() == "agent-v1", "Active generation should remain parent baseline"
-        print("  ✓ Canary failure accurately triggered Rollback Engine to parent baseline 'agent-v1'")
+        print("  [OK] Canary failure accurately triggered Rollback Engine to parent baseline 'agent-v1'")
 
         # 5. Verify End-to-End Control Plane Cycle
         print("[5/8] Verifying End-to-End Evolution Control Plane Cycle (Dry Run)...")
@@ -127,7 +127,7 @@ async def main() -> int:
         cycle_mutations = await controller.run_evolution_cycle(observations=observations, dry_run=True)
         assert len(cycle_mutations) > 0, "Controller cycle should propose mutation for observed failure"
         assert cycle_mutations[0].status == MutationStatus.APPROVED, "Mutation should be approved in dry_run"
-        print(f"  ✓ End-to-End evolution cycle successfully ran: proposed candidate '{cycle_mutations[0].candidate_version}'")
+        print(f"  [OK] End-to-End evolution cycle successfully ran: proposed candidate '{cycle_mutations[0].candidate_version}'")
 
         # 6. Isolated candidate + Jcode + sandbox
         print("[6/8] Verifying isolated candidate implementation through Jcode and Layer 7...")
@@ -151,7 +151,7 @@ async def main() -> int:
         coding = EvolutionImplementer().implement(impl_mut, candidate)
         assert coding.status == "success"
         assert candidate.status == CandidateStatus.IMPLEMENTED
-        print(f"  ✓ Candidate '{candidate.candidate_id}' implemented in isolation with sandbox tests")
+        print(f"  [OK] Candidate '{candidate.candidate_id}' implemented in isolation with sandbox tests")
 
         # 7. Self-protection
         print("[7/8] Verifying Evolution Controller self-protection...")
@@ -160,7 +160,7 @@ async def main() -> int:
             assert_target_evolvable("constitutional_rules")
             raise AssertionError("protected target must be rejected")
         except ConstitutionalViolationError:
-            print("  ✓ Protected targets cannot be evolved")
+            print("  [OK] Protected targets cannot be evolved")
 
         # 8. Live promote/rollback with Layer 8 stub
         print("[8/8] Verifying promotion, lineage, rollback, and audit trail...")
@@ -177,7 +177,7 @@ async def main() -> int:
         assert live.registry.get_active_generation() == "agent-v1"
         event_types = {e.event_type for e in live.registry.list_audit(limit=50)}
         assert "PROMOTED" in event_types and "ROLLBACK" in event_types
-        print("  ✓ Promotion, version lineage, rollback, and audit trail verified")
+        print("  [OK] Promotion, version lineage, rollback, and audit trail verified")
 
     print("\n=== LAYER 9 VERIFICATION SUCCESSFUL ===")
     return 0

@@ -52,6 +52,18 @@ def main() -> int:
         errors.append("CI does not build the sidecar via scripts/build_backend_sidecar.py")
     if "cd ui" in workflow and "npx tauri build" in workflow:
         errors.append("CI still runs tauri build from ui/ instead of the repository root")
+    if "PYTHONUTF8" not in workflow:
+        errors.append("CI test job must set PYTHONUTF8 for Windows cp1252 consoles")
+    if "Packaged Runtime Smoke (Windows)" not in workflow:
+        errors.append("CI must smoke-test the Windows sidecar health endpoint")
+    if "Packaged Runtime Smoke (Linux)" not in workflow:
+        errors.append("CI must smoke-test the Linux sidecar health endpoint")
+
+    api_ts = (ROOT / "ui" / "src" / "lib" / "api.ts").read_text(encoding="utf-8")
+    if "127.0.0.1:8000" not in api_ts:
+        errors.append("Packaged UI must call the sidecar at 127.0.0.1:8000")
+    if "__TAURI" not in api_ts:
+        errors.append("UI must detect the Tauri webview and not rely on the Vite dev proxy")
 
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     if 'requires-python = ">=3.11"' not in pyproject:
@@ -66,10 +78,10 @@ def main() -> int:
             print(f"  - {item}")
         return 1
 
-    print("  ✓ Sidecar resolver is target-triple aware")
-    print("  ✓ Python fallback is development-only")
-    print("  ✓ Tauri icons, capabilities, and build.rs are present")
-    print("  ✓ CI does not claim unverified macOS or Python 3.10")
+    print("  [OK] Sidecar resolver is target-triple aware")
+    print("  [OK] Python fallback is development-only")
+    print("  [OK] Tauri icons, capabilities, and build.rs are present")
+    print("  [OK] CI does not claim unverified macOS or Python 3.10")
     print("\n=== PACKAGING VERIFICATION SUCCESSFUL ===")
     return 0
 

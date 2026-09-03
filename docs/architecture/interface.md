@@ -63,17 +63,16 @@ The UI and API layer **MUST NEVER**:
 
 ## 3. Core UI Sections & Capabilities
 
-1. **Sovereign Chat Interface**: Primary conversational view with streaming message cards, real-time thought processing, inline tool activity, plan visualization, and error handling.
-2. **Session Manager**: Session creation, history list, resume, rename, archive, and clear, backed by Layer 3 memory.
-3. **Plan / Task Visualizer**: Exposes Layer 5 Plan DAGs with status nodes (`PENDING`, `READY`, `RUNNING`, `SUCCEEDED`, `FAILED`), task retries, and replanning history.
-4. **Tool Activity Stream**: Displays Layer 4 capability executions, parameters, and results with permission policy badges (`ALLOW`, `REQUIRE_APPROVAL`, `DENY`).
-5. **Approval Center**: Human-in-the-Loop review center for Layer 4 tool executions, Layer 7 runtime requests, and Layer 9 evolution candidate promotions.
-6. **Evolution / Metamorphosis Dashboard**: Displays Layer 9 active generation, proposed candidate mutations, evaluation metric comparisons (+/- %), canary health, rollback history, and human approval gates.
-7. **Jcode Coding Workspace**: Visualizer for Layer 6 software engineering tasks, file change diffs, test execution results, and sandboxed sandbox terminal output.
-8. **Memory / Knowledge Inspector**: Inspection and scrubbing interface for Layer 3 ephemeral session memory, persistent SQLite entries, and RAG document sources.
-9. **System Status**: Real-time health monitoring of backend layers (Core, Models, Memory, Tools, Runtime, Jcode, Evaluation, Evolution).
-10. **Audit Log Viewer**: Filterable audit trail viewer for `RuntimeEvent`, `OrchestrationEvent`, and `EvolutionEvent` streams.
-11. **Settings**: Configuration editor for backend parameters mapping directly to safe `config.py` settings.
+The shipped desktop SPA (`ui/src/App.tsx`) has five operator views. It is a
+presentation layer over the FastAPI service, not a second agent engine.
+
+1. **Workspace**: Goal composer, streaming pipeline events, current plan status, and session transcript. This is the conversational surface (not a separate "Sovereign Chat" product).
+2. **Activity**: Pipeline event log for the current session.
+3. **Evolution**: Active generation, candidates, proposals, lineage, human approval, demonstration cycle, and rollback.
+4. **Trust**: Constitutional invariants and protected boundaries (read-only).
+5. **Settings**: Safe runtime settings (model provider/name, local host, timeout). Permission ceiling and constitution cannot be raised from this surface.
+
+Supporting API surfaces used by those views: session manager, plan visualizer payload, tool activity, coding workspace listing, memory search, and audit log. Approval for Layer 9 promotions is enforced server-side (`SEMI_AUTOMATIC`).
 
 ---
 

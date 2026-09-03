@@ -27,7 +27,9 @@ from agent.evolution.models import EvolutionMode
 from agent.evolution.protection import is_protected_target
 from agent.integrations.agentscope.adapter import AgentScopeAdapter
 from agent.logging import get_logger
+from agent.memory.context import ContextBuilder
 from agent.memory.session import SessionMemoryManager
+from agent.memory.sqlite import SQLiteMemoryBackend
 from agent.orchestration.orchestrator import PlanOrchestrator
 from agent.orchestration.planner import RuleBasedPlanner
 
@@ -58,11 +60,23 @@ app.add_middleware(
 )
 
 session_manager = SessionMemoryManager()
+long_term_memory = SQLiteMemoryBackend(db_path=os.path.join(settings.data_dir, "memory.db"))
+context_builder = ContextBuilder(
+    session_manager=session_manager,
+    long_term_memory=long_term_memory,
+)
+workspace_dir = os.path.join(settings.data_dir, "workspace")
+os.makedirs(workspace_dir, exist_ok=True)
 planner = RuleBasedPlanner()
-broker = CapabilityBroker()
+broker = CapabilityBroker(workspace_dir=workspace_dir)
 orchestrator = PlanOrchestrator(broker=broker)
 guard = ConstitutionalGuard()
-adapter = AgentScopeAdapter(planner=planner, broker=broker, orchestrator=orchestrator)
+adapter = AgentScopeAdapter(
+    planner=planner,
+    broker=broker,
+    orchestrator=orchestrator,
+    context_builder=context_builder,
+)
 _evolution_controller = EvolutionController(
     db_path=os.path.join(settings.data_dir, "evolution.db"),
     data_dir=settings.data_dir,
@@ -469,13 +483,22 @@ async def run_evolution_cycle(dry_run: bool = True, demo: bool = False, body: Op
             detail="Unrestricted mutation payloads are not accepted. Provide observations for the Evolution Control Plane.",
         )
     observations = payload.get("observations")
+    demo_requested = bool(demo or payload.get("demo"))
+    use_live = bool(payload.get("use_live_observations"))
     if not observations:
-        if dry_run or demo or payload.get("demo"):
+        if use_live:
+            observations = _evolution_controller.observer.export_component_observations()
+            if not observations:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="No live observations have been recorded yet. Run a goal first.",
+                )
+        elif dry_run or demo_requested:
             observations = list(DEMO_OBSERVATIONS)
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Observations are required for a live evolution cycle. Pass demo=true to run the deterministic capability-gap demonstration.",
+                detail="Observations are required for a live evolution cycle. Pass demo=true to run the deterministic capability-gap demonstration, or use_live_observations=true after running goals.",
             )
     mutations = await _evolution_controller.run_evolution_cycle(
         observations=observations,

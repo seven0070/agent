@@ -3,10 +3,12 @@
 ## 1. Overview
 The Agent desktop interface consists of:
 - **Tauri 2 Desktop Shell** (`src-tauri/`): Native window wrapper and sidecar supervisor.
-- **React + TypeScript SPA** (`ui/`): Sovereign Chat, Session Manager, Plan Visualizer, Evolution Dashboard, Jcode Workspace, and Audit Viewer.
-- **Local FastAPI Service** (`src/agent/api/`): Binds to `127.0.0.1` and exposes Layers 0–9.
+- **React + TypeScript SPA** (`ui/`): Workspace (goal + plan + live activity), Activity, Evolution, Trust, Settings.
+- **Local FastAPI Service** (`src/agent/api/`): Binds to `127.0.0.1` and exposes Layers 0–9 through `AgentPipeline`.
 
-Packaged releases launch `agent-backend-<target-triple>` next to the application binary. They do not require the user's Python installation or a source checkout. Python/`scripts/run_agent_backend.py` is a development-only path.
+Packaged releases launch `agent-backend-<target-triple>` next to the application binary. They do not require the user's Python installation or a source checkout. Python/`scripts/run_agent_backend.py` is a development-only path (`cfg(debug_assertions)`).
+
+There is no OpenHands dependency.
 
 ---
 
@@ -25,7 +27,7 @@ In another terminal:
 cd ui && npm install && npm run dev
 ```
 
-The UI is available at `http://localhost:1420` and talks to `http://127.0.0.1:8000`.
+The UI is available at `http://localhost:1420` and talks to `http://127.0.0.1:8000` through the Vite proxy.
 
 Tauri development (uses the Python fallback only in debug builds):
 
@@ -42,6 +44,8 @@ python scripts/build_backend_sidecar.py
 npx --prefix ui tauri build
 ```
 
-Verified targets: Windows x64 (MSI/NSIS) and Linux x64 (deb/AppImage). macOS is not claimed.
+CI targets: Windows x64 (MSI/NSIS) and Linux x64 (deb/AppImage). macOS is not claimed.
 
 Installers land under `src-tauri/target/release/bundle/`.
+
+A full installer click-through is **not** claimed from the Linux audit environment. GitHub Actions is the platform verification path.

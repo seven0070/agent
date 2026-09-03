@@ -473,6 +473,14 @@ class EvolutionController:
             raise KeyError(f"Unknown mutation '{mutation_id}'")
         rolled = self.rollback_engine.rollback_mutation(mutation=mut, reason=reason)
         rollback_generation(mut.parent_version, data_dir=self.data_dir)
+        for proposal in self.registry.list_proposals():
+            if proposal.mutation_id == mutation_id:
+                proposal.status = ProposalStatus.ROLLED_BACK
+                self.registry.save_proposal(proposal)
+        for candidate in self.registry.list_candidates():
+            if candidate.mutation_id == mutation_id:
+                candidate.status = CandidateStatus.ROLLED_BACK
+                self.registry.save_candidate(candidate)
         self._audit("ROLLBACK", "ROLLED_BACK", mutation=rolled, reason=reason)
         return rolled
 

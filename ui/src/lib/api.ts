@@ -5,8 +5,17 @@ export type StreamEvent = {
   timestamp?: string;
 };
 
+function apiRoot(): string {
+  if (typeof window === "undefined") return "";
+  const w = window as Window & { __TAURI_INTERNALS__?: unknown; __TAURI__?: unknown };
+  if (w.__TAURI_INTERNALS__ || w.__TAURI__) return "http://127.0.0.1:8000";
+  const { protocol, hostname } = window.location;
+  if (protocol === "tauri:" || hostname === "tauri.localhost") return "http://127.0.0.1:8000";
+  return "";
+}
+
 export async function json<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
+  const res = await fetch(`${apiRoot()}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
@@ -31,7 +40,7 @@ export async function streamGoal(
   prompt: string,
   onEvent: (event: StreamEvent) => void,
 ): Promise<void> {
-  const res = await fetch("/api/chat/stream", {
+  const res = await fetch(`${apiRoot()}/api/chat/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ session_id: sessionId, prompt }),

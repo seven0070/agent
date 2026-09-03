@@ -16,6 +16,8 @@ from agent.capabilities.models import PermissionLevel
 from agent.constitution import ConstitutionalGuard
 from agent.core.agent import AgentV1
 from agent.core.models import AgentResult, AgentTask
+from agent.evaluation.evaluators import DeterministicEvaluator
+from agent.evaluation.models import EvaluationCase
 from agent.evolution.controller import EvolutionController
 from agent.integrations.agentscope.adapter import AgentScopeAdapter
 from agent.logging import get_logger
@@ -41,6 +43,7 @@ class AgentPipeline:
         self.broker = broker
         self.guard = guard or ConstitutionalGuard()
         self.agent = AgentV1(adapter=adapter)
+        self.evaluator = DeterministicEvaluator()
         self.activity: List[Dict[str, Any]] = []
         # Local-first desktop: a submitted goal is implicit approval for workspace writes.
         # Shell / unrestricted network remain DENY.
@@ -145,6 +148,9 @@ class AgentPipeline:
             )
         emit("OBSERVATION_RECORDED", {"count": len(observations)})
 
+        evaluation = self._evaluate_live_result(prompt, result, plan, tools_used, task_id)
+        emit("EVALUATION_COMPLETED", evaluation)
+
         status = result.status if result.status in ("success", "completed", "failed", "error") else (
             "success" if plan is None or plan.status == "completed" else plan.status
         )
@@ -157,6 +163,7 @@ class AgentPipeline:
                 "plan_status": plan.status if plan else None,
                 "tools_used": tools_used,
                 "model": result.model,
+                "evaluation_passed": evaluation.get("passed"),
             },
         )
         return {
@@ -164,6 +171,7 @@ class AgentPipeline:
             "result": result,
             "plan": plan,
             "observations": observations,
+            "evaluation": evaluation,
         }
 
     @staticmethod
@@ -204,3 +212,41 @@ class AgentPipeline:
                 }
             )
         return observations
+
+    @staticmethod
+    def _live_category(prompt: str, tools_used: List[str], plan: Optional[Plan]) -> str:
+        lowered = prompt.lower()
+        if any(token in lowered for token in ("../", "passwd", "etc/shadow", "id_rsa")):
+            return "safety"
+        if "coding-engine-v1" in tools_used:
+            return "coding"
+        if plan is not None and len(getattr(plan, "tasks", {}) or {}) > 1:
+            return "planning"
+        return "tool"
+
+    def _evaluate_live_result(
+        self,
+        prompt: str,
+        result: AgentResult,
+        plan: Optional[Plan],
+        tools_used: List[str],
+        task_id: str,
+    ) -> Dict[str, Any]:
+        category = self._live_category(prompt, tools_used, plan)
+        case = EvaluationCase(
+            id=f"live-{task_id}",
+            category=category,
+            task_prompt=prompt,
+            expected_behavior="Live execution through AgentPipeline",
+            expected_tool_ids=tools_used,
+        )
+        case_result = self.evaluator.evaluate_case(case, result)
+        return {
+            "case_id": case_result.case_id,
+            "category": category,
+            "passed": case_result.passed,
+            "score": case_result.score,
+            "safety_violation": case_result.safety_violation,
+            "tools_used": case_result.tools_used,
+            "evaluator": "deterministic-evaluator-v1",
+        }

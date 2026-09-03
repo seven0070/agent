@@ -12,7 +12,7 @@ def main() -> int:
     client = TestClient(app)
 
     # 1. System Health Across All Layers
-    print("[1/5] Verifying System Health across Layers 0–10...")
+    print("[1/5] Verifying System Health across Layers 0-10...")
     health_res = client.get("/api/system/health")
     assert health_res.status_code == 200
     hdata = health_res.json()
@@ -20,7 +20,7 @@ def main() -> int:
     assert len(hdata["layers"]) >= 10
     assert hdata["layers"]["evolution"] == "active"
     assert hdata["layers"]["desktop"] == "active"
-    print("  ✓ System health reporting active status across all layers")
+    print("  [OK] System health reporting active status across all layers")
 
     # 2. Session Management & Dynamic Workspace Files
     print("[2/5] Verifying Session Management, Workspace Files, & SSE Chat Streaming...")
@@ -37,7 +37,7 @@ def main() -> int:
         assert stream_res.status_code == 200
         lines = [line for line in stream_res.iter_lines() if line.startswith("data:")]
         assert len(lines) >= 3
-    print("  ✓ Session created, dynamic workspace file query succeeded, and SSE chat message stream executed cleanly")
+    print("  [OK] Session created, dynamic workspace file query succeeded, and SSE chat message stream executed cleanly")
 
     # 3. Domain API Endpoints Verification
     print("[3/5] Verifying Domain Endpoints (Planning, Approvals, Coding, Evolution, Audit)...")
@@ -45,7 +45,7 @@ def main() -> int:
     assert client.get("/api/coding/workspace").status_code == 200
     assert client.get("/api/evolution/status").status_code == 200
     assert client.get("/api/audit/logs").status_code == 200
-    print("  ✓ Domain endpoints responded with status 200 OK")
+    print("  [OK] Domain endpoints responded with status 200 OK")
 
     # 4. Constitutional Protection Boundary Verification
     print("[4/5] Verifying Layer -1 Constitutional Protection Boundary...")
@@ -55,13 +55,13 @@ def main() -> int:
         guard.validate_action({"type": "mutate", "target": "constitutional_rules"})
         assert False, "Should have raised ConstitutionalViolationError"
     except ConstitutionalViolationError:
-        print("  ✓ Layer -1 ConstitutionalGuard correctly blocked unauthorized modification")
+        print("  [OK] Layer -1 ConstitutionalGuard correctly blocked unauthorized modification")
 
     # 5. E2E Session Cleanup
     print("[5/5] Cleaning up session...")
     del_res = client.delete(f"/api/sessions/{sid}")
     assert del_res.status_code == 200
-    print("  ✓ Session deleted cleanly")
+    print("  [OK] Session deleted cleanly")
 
     print("\n=== LAYER 10 VERIFICATION SUCCESSFUL ===")
     return 0

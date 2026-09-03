@@ -15,6 +15,6 @@ This document defines the scope, responsibilities, and current status of each la
 | **Layer 7** | Runtime / Sandbox | LocalAgentScopeRuntime, RuntimeSession lifecycle, RuntimeSandbox, path traversal guards, ResourceLimits, NetworkPolicy (DENY/ALLOWLIST), RuntimeEvent audit. | **IMPLEMENTED** |
 | **Layer 8** | Evaluation / Verification | DeterministicEvaluator, MetricDimensions, EvaluationThresholds, BaselineStore, RegressionComparator, EvaluationRunner, EvaluationReport. | **IMPLEMENTED** |
 | **Layer 9** | Evolution Control Plane | Observer, trigger, structured proposals, isolated candidates, Jcode implementation, Layer 7 sandbox, Layer 8 evaluation, promotion gate, versioning, rollback, audit. | **IMPLEMENTED** |
-| **Layer 10** | UI / Desktop | Tauri 2 shell, React UI, local FastAPI API, packaged PyInstaller sidecar for Windows x64 and Linux x64. | **IMPLEMENTED** |
+| **Layer 10** | UI / Desktop | Tauri 2 shell, React UI, local FastAPI API, packaged PyInstaller sidecar for Windows x64 and Linux x64. CI builds installers; a packaged window click-through is not claimed from the Linux audit environment. | **IMPLEMENTED** |
 
 Layers 11–15 do not exist and must not be added.

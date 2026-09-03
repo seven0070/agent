@@ -69,6 +69,17 @@ class EvolutionObserver:
         }
         self.observe_event("component_observation", payload)
 
+    def export_component_observations(self) -> List[Dict[str, Any]]:
+        """Return recorded component observations for a live evolution cycle."""
+        exported: List[Dict[str, Any]] = []
+        for event in self._observed_events:
+            if event.get("event_type") != "component_observation":
+                continue
+            payload = event.get("payload") or {}
+            if isinstance(payload, dict) and payload.get("component"):
+                exported.append(dict(payload))
+        return exported
+
     def record_capability_gap(self, capability: str, evidence: Dict[str, Any]) -> None:
         self.record_observation(
             component=capability,
