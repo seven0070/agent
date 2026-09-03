@@ -38,6 +38,33 @@ def test_session_memory_isolation() -> None:
     assert len(mgr.get_session_history("session-B")) == 1
 
 
+def test_working_memory_round_trips_through_sqlite() -> None:
+    from agent.integrations.agentscope.adapter import AgentScopeAdapter
+    from agent.orchestration import PlanOrchestrator, RuleBasedPlanner
+
+    backend = SQLiteMemoryBackend(db_path=":memory:")
+    live = SessionMemoryManager()
+    live.record_step("s-restart", "Evaluate calculation", tool_id="calculator-v1", output="42")
+    adapter = AgentScopeAdapter(
+        planner=RuleBasedPlanner(),
+        orchestrator=PlanOrchestrator(),
+        context_builder=ContextBuilder(session_manager=live, long_term_memory=backend),
+    )
+    adapter._persist_working_memory("s-restart")
+    restored = SessionMemoryManager()
+    adapter.context_builder.session_manager = restored
+    adapter._hydrate_working_memory("s-restart")
+    wm = restored.get_working_memory("s-restart")
+    assert wm.last_outputs.get("calculator-v1") == "42"
+
+
+def test_follow_up_value_prefers_calculator_over_coding_summary() -> None:
+    wm = WorkingMemory()
+    wm.last_outputs["coding-engine-v1"] = "Jcode completed task 'coding-task-auto'. Created/edited 1 files."
+    wm.last_outputs["calculator-v1"] = "42"
+    assert wm.follow_up_value() == "42"
+
+
 def test_working_memory_retrieves_relevant_artifacts_only() -> None:
     mgr = SessionMemoryManager()
     mgr.update_working_memory("s1", goal="Calculate 12 + 30")

@@ -113,6 +113,31 @@ def test_compose_does_not_duplicate_simple_calc() -> None:
     assert "write" not in kinds
 
 
+def test_five_step_keeps_explicit_status_write() -> None:
+    completed, snapshot = _run(
+        "Read left.txt then read right.txt then add the numbers then write the sum to total.txt then write done.txt containing copied",
+        files=[("left.txt", "10"), ("right.txt", "32")],
+    )
+    assert "42" in snapshot.get("total.txt", "")
+    assert snapshot.get("done.txt") == "copied"
+    assert completed.status == "completed"
+
+
+def test_duplicate_identical_calculations_are_collapsed() -> None:
+    ops = compose_operations("Calculate 2 + 2 then calculate 2 + 2 then write the result to out.txt")
+    computes = [op for op in ops if op.kind == "compute"]
+    assert len(computes) == 1
+    completed, snapshot = _run("Calculate 2 + 2 then calculate 2 + 2 then write the result to out.txt")
+    assert "4" in snapshot.get("out.txt", "")
+    assert completed.status == "completed"
+
+
+def test_write_negation_does_not_create_file() -> None:
+    completed, snapshot = _run("Create a file named secret.txt containing classified and do not write any files")
+    assert "secret.txt" not in snapshot
+    assert completed.status == "failed"
+
+
 def test_read_then_write_keeps_explicit_destination_content() -> None:
     completed, snapshot = _run(
         "Read sum.txt and write a file named status.txt containing the text saved-42",

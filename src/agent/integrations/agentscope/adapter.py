@@ -4,6 +4,7 @@ Maps application domain models (AgentTask, AgentResult) to AgentScope 2.x abstra
 Integrated with Layer 2 ModelRouter, Layer 3 ContextBuilder, Layer 4 CapabilityBroker, and Layer 5 PlanOrchestrator.
 """
 
+import json
 from typing import Any, Dict, List, Optional
 from agentscope.agent import Agent
 from agentscope.model import ChatModelBase
@@ -21,6 +22,8 @@ from agent.capabilities.broker import CapabilityBroker
 from agent.capabilities.models import CapabilityResult
 from agent.orchestration.planner import RuleBasedPlanner
 from agent.orchestration.orchestrator import PlanOrchestrator
+
+_WM_MARKER = "WORKING_MEMORY_STATE"
 
 class AgentScopeAdapter:
     """
@@ -115,6 +118,7 @@ class AgentScopeAdapter:
         Converts response to structured AgentResult and persists turn to memory.
         """
         if task.session_id and self.context_builder.session_manager:
+            self._hydrate_working_memory(task.session_id)
             self.context_builder.session_manager.add_turn(
                 session_id=task.session_id,
                 role="user",
@@ -129,7 +133,10 @@ class AgentScopeAdapter:
             working = self.context_builder.session_manager.get_working_memory(task.session_id)
             relevant = working.relevant_for(task.prompt)
             session_hints["working_memory"] = relevant
-            if relevant.get("last_outputs"):
+            follow = working.follow_up_value()
+            if follow:
+                session_hints["last_output"] = follow
+            elif relevant.get("last_outputs"):
                 session_hints["last_output"] = str(list(relevant["last_outputs"].values())[-1])
             elif relevant.get("artifacts"):
                 session_hints["last_output"] = str(list(relevant["artifacts"].values())[-1])
@@ -187,6 +194,7 @@ class AgentScopeAdapter:
                         mgr.record_step(task.session_id, "coding-complete", tool_id="coding-engine-v1", output=t.outputs)
                         for rel in (t.metadata or {}).get("files_changed") or []:
                             mgr.record_artifact(task.session_id, str(rel), str(t.outputs or ""))
+                self._persist_working_memory(task.session_id)
             final_output = "\n".join(outputs_summary)
             exec_result = ModelExecutionResult(
                 model_id="orchestrator",
@@ -260,6 +268,8 @@ class AgentScopeAdapter:
                     session_id=task.session_id,
                 )
             )
+        if task.session_id:
+            self._persist_working_memory(task.session_id)
 
         return AgentResult(
             task_id=task.task_id,
@@ -278,4 +288,60 @@ class AgentScopeAdapter:
                 "tools_used": tools_used,
                 "files_changed": files_changed,
             },
+        )
+
+    def _hydrate_working_memory(self, session_id: str) -> None:
+        mgr = self.context_builder.session_manager
+        if mgr is None:
+            return
+        working = mgr.get_working_memory(session_id)
+        if working.artifacts or working.last_outputs:
+            return
+        backend = self.context_builder.long_term_memory
+        if backend is None:
+            return
+        items = backend.retrieve_memories(
+            query=_WM_MARKER,
+            session_id=session_id,
+            memory_type=MemoryType.TASK.value,
+            limit=8,
+        )
+        for item in items:
+            if _WM_MARKER not in (item.content or ""):
+                continue
+            raw = item.content.split(_WM_MARKER, 1)[-1].strip()
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            working.goal = str(data.get("goal") or working.goal)
+            working.active_plan_id = data.get("active_plan_id") or working.active_plan_id
+            working.completed_steps = list(data.get("completed_steps") or working.completed_steps)
+            working.artifacts = dict(data.get("artifacts") or working.artifacts)
+            working.last_outputs = dict(data.get("last_outputs") or working.last_outputs)
+            working.decisions = list(data.get("decisions") or working.decisions)
+            return
+
+    def _persist_working_memory(self, session_id: str) -> None:
+        mgr = self.context_builder.session_manager
+        backend = self.context_builder.long_term_memory
+        if mgr is None or backend is None:
+            return
+        working = mgr.get_working_memory(session_id)
+        payload = {
+            "goal": working.goal,
+            "active_plan_id": working.active_plan_id,
+            "completed_steps": working.completed_steps[-20:],
+            "artifacts": working.artifacts,
+            "last_outputs": working.last_outputs,
+            "decisions": working.decisions[-20:],
+        }
+        backend.store_memory(
+            MemoryItem(
+                id=f"wm-{session_id}",
+                content=f"{_WM_MARKER} {json.dumps(payload)}",
+                memory_type=MemoryType.TASK,
+                source="system",
+                session_id=session_id,
+            )
         )

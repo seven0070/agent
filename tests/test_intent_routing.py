@@ -66,6 +66,9 @@ def test_intent_converse_and_unsupported() -> None:
     assert classify_intent("Delete the note from my desktop.").kind == UNSUPPORTED
     assert classify_intent("Search the web for today's weather.").kind == UNSUPPORTED
     assert classify_intent("Open a pull request on GitHub for this repository.").kind == UNSUPPORTED
+    assert classify_intent(
+        "Create a file named secret.txt containing classified and do not write any files"
+    ).kind == UNSUPPORTED
 
 
 def test_open_external_action_is_not_read_when_workspace_has_files(tmp_path) -> None:

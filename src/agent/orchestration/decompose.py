@@ -278,8 +278,15 @@ def compose_operations(goal: str, workspace_dir: Optional[str] = None) -> List[O
         writes = [op for op in ops if op.kind == "write"]
         inspects = [op for op in ops if op.kind == "inspect"]
 
+    explicit = _explicit_write_contents(goal)
     if reduce and len(source_files) >= 2 and dests and not computes:
-        ops = [op for op in ops if op.kind not in {"read", "compute", "write"}]
+        reduce_dests = [name for name in dests if name not in explicit]
+        kept_writes = [
+            op
+            for op in ops
+            if op.kind == "write" and str(op.inputs.get("relative_path") or "") in explicit
+        ]
+        ops = [op for op in ops if op.kind not in {"read", "compute", "write", "converse"}]
         read_ops = [
             Op("read", "read_file-v1", {"relative_path": name}, f"Read {name}") for name in source_files
         ]
@@ -293,8 +300,9 @@ def compose_operations(goal: str, workspace_dir: Optional[str] = None) -> List[O
             expression = "+".join(refs)
         compute = Op("compute", "calculator-v1", {"expression": expression}, "Reduce numeric file values")
         compute.bind["expression"] = "reads"
-        write_ops = []
-        for dest in dests:
+        write_ops = list(kept_writes)
+        existing_explicit = {op.inputs.get("relative_path") for op in write_ops}
+        for dest in reduce_dests:
             write = Op(
                 "write",
                 "write_file-v1",
@@ -303,10 +311,62 @@ def compose_operations(goal: str, workspace_dir: Optional[str] = None) -> List[O
             )
             write.bind["content"] = "compute"
             write_ops.append(write)
+        for name, content in explicit.items():
+            if name in existing_explicit:
+                continue
+            write_ops.append(
+                Op(
+                    "write",
+                    "write_file-v1",
+                    {"relative_path": name, "content": content},
+                    f"Write {name}",
+                )
+            )
         ops = ops + read_ops + [compute] + write_ops
 
+    ops = _drop_noop_converse(ops)
+    ops = _dedupe_identical_ops(ops)
     _wire_binds(ops)
     return ops
+
+
+def _explicit_write_contents(goal: str) -> Dict[str, str]:
+    from agent.orchestration.planner import extract_file_write_ops
+
+    found: Dict[str, str] = {}
+    for name, content in extract_file_write_ops(goal):
+        if str(content).strip():
+            found[name] = str(content)
+    return found
+
+
+def _drop_noop_converse(ops: List[Op]) -> List[Op]:
+    if any(op.kind not in {"converse"} for op in ops):
+        return [op for op in ops if op.kind != "converse"]
+    return ops
+
+
+def _dedupe_identical_ops(ops: List[Op]) -> List[Op]:
+    out: List[Op] = []
+    for op in ops:
+        if out and _ops_equivalent(out[-1], op):
+            continue
+        out.append(op)
+    return out
+
+
+def _ops_equivalent(left: Op, right: Op) -> bool:
+    if left.kind != right.kind or left.tool_id != right.tool_id:
+        return False
+    if left.kind == "compute":
+        return str(left.inputs.get("expression") or "") == str(right.inputs.get("expression") or "")
+    if left.kind == "write":
+        return str(left.inputs.get("relative_path") or "") == str(right.inputs.get("relative_path") or "") and str(
+            left.inputs.get("content") or ""
+        ) == str(right.inputs.get("content") or "")
+    if left.kind == "read":
+        return str(left.inputs.get("relative_path") or "") == str(right.inputs.get("relative_path") or "")
+    return left.inputs == right.inputs
 
 
 def _wire_binds(ops: List[Op]) -> None:

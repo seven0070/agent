@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT))
 
 from tests.benchmark.cases import (  # noqa: E402
     BenchmarkCase,
+    build_autonomy_cases,
     build_capability_cases,
     build_cases,
     build_deep_capability_cases,
@@ -123,6 +124,15 @@ def run_pipeline(case: BenchmarkCase) -> Dict[str, Any]:
     extras = list(case.follow_ups or [])
     if case.follow_up:
         extras.insert(0, case.follow_up)
+    if case.restart and extras:
+        session_manager = SessionMemoryManager()
+        adapter = AgentScopeAdapter(
+            planner=RuleBasedPlanner(),
+            broker=broker,
+            orchestrator=PlanOrchestrator(broker=broker),
+            context_builder=ContextBuilder(session_manager=session_manager, long_term_memory=memory),
+        )
+        pipeline = AgentPipeline(adapter=adapter, evolution=evolution, broker=broker)
     for extra in extras:
         outcome = asyncio.run(pipeline.execute(session_id="bench-session", prompt=extra))
     elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
@@ -318,7 +328,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run Agent real-world benchmarks")
     parser.add_argument(
         "--suite",
-        choices=["core", "open-ended", "capability", "planning", "deep", "all"],
+        choices=["core", "open-ended", "capability", "planning", "deep", "autonomy", "all"],
         default="all",
         help="Which benchmark suite to run (default: all)",
     )
@@ -334,6 +344,8 @@ def main() -> int:
         suites.append(("planning", build_planning_cases()))
     if args.suite in ("deep", "all"):
         suites.append(("deep", build_deep_capability_cases()))
+    if args.suite in ("autonomy", "all"):
+        suites.append(("autonomy", build_autonomy_cases()))
 
     reports = [_run_suite(name, cases) for name, cases in suites]
     report_path = ROOT / "tests" / "benchmark" / "last_report.json"

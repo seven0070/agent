@@ -45,6 +45,21 @@ class WorkingMemory:
             "decisions": self.decisions[-limit:],
         }
 
+    def follow_up_value(self) -> str:
+        """Prefer a real tool result over coding summaries when wiring the next step."""
+        for tool_id in ("calculator-v1", "inspect_data-v1", "read_file-v1"):
+            value = str(self.last_outputs.get(tool_id) or "").strip()
+            if value:
+                return value
+        for tool_id, output in reversed(list(self.last_outputs.items())):
+            text = str(output or "").strip()
+            if tool_id == "coding-engine-v1" or not text:
+                continue
+            return text
+        if self.artifacts:
+            return str(list(self.artifacts.values())[-1])
+        return ""
+
 
 class SessionMemoryManager:
     """

@@ -53,6 +53,10 @@ _EXTERNAL_ACTION = re.compile(
     r"\b(open|submit|publish|launch|post)\b",
     flags=re.IGNORECASE,
 )
+_NEGATE_WRITE = re.compile(
+    r"\bdo not write\b|\bdon't write\b|\bdo not create\b|\bdon't create\b|\bno files\b",
+    flags=re.IGNORECASE,
+)
 
 
 @dataclass
@@ -293,6 +297,8 @@ def classify_intent(goal: str, workspace_dir: Optional[str] = None) -> Intent:
         )
 
     persist = _persist_outcome(lower, filename_in_goal)
+    if persist and _NEGATE_WRITE.search(lower):
+        return Intent(kind=UNSUPPORTED, confidence=3.0, slots={"goal": text, "conflict": "write-negation"})
     explicit_calc = _explicit_calculation(lower)
     if not software and (explicit_calc or math) and not (persist and not explicit_calc):
         slots: Dict[str, Any] = {"expression": math or text}
