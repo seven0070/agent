@@ -62,6 +62,8 @@ def test_intent_spoken_math_is_compute_not_mock() -> None:
 def test_intent_converse_and_unsupported() -> None:
     assert classify_intent("Hello there").kind == CONVERSE
     assert classify_intent("Email this report to the whole team.").kind == UNSUPPORTED
+    assert classify_intent("Delete the note from my desktop.").kind == UNSUPPORTED
+    assert classify_intent("Search the web for today's weather.").kind == UNSUPPORTED
 
 
 def test_existing_cued_goals_keep_previous_routing() -> None:
@@ -129,6 +131,21 @@ def test_unsupported_capability_fails_honestly_not_mock() -> None:
         assert "Mocked AgentScope response content" not in result.output
 
     asyncio.run(_run())
+
+
+def test_json_average_uses_inspect_capability() -> None:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        broker = CapabilityBroker(workspace_dir=tmp_dir)
+        sandbox = broker.workspace_manager.workspace_dir
+        with open(os.path.join(sandbox, "totals.json"), "w", encoding="utf-8") as handle:
+            handle.write('[{"user": "sam", "score": 10}, {"user": "ada", "score": 20}, {"user": "lee", "score": 30}]')
+        plan = RuleBasedPlanner().create_plan(
+            "What is the average score in this JSON?",
+            workspace_dir=sandbox,
+        )
+        completed = PlanOrchestrator(broker=broker).execute_plan(plan)
+        assert completed.status == "completed"
+        assert "20" in str(completed.tasks["task_inspect_1"].outputs)
 
 
 def test_json_query_uses_inspect_capability() -> None:

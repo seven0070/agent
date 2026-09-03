@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Optional
 
 
 _STOPWORDS = {
@@ -123,7 +123,7 @@ def extract_function_names(goal: str) -> List[str]:
     return names
 
 
-def _spec_for_name(name: str) -> FunctionSpec:
+def _spec_for_name(name: str) -> Optional[FunctionSpec]:
     canonical = _ALIASES.get(name, name)
     catalog = {
         "add": FunctionSpec("add", "a, b", "return a + b", [((2, 3), 5), ((10, 20), 30)]),
@@ -137,6 +137,10 @@ def _spec_for_name(name: str) -> FunctionSpec:
         "larger": FunctionSpec("larger", "a, b", "return max(a, b)", [((3, 1), 3), ((8, 2), 8)]),
         "smaller": FunctionSpec("smaller", "a, b", "return min(a, b)", [((3, 1), 1), ((8, 2), 2)]),
         "abs_value": FunctionSpec("abs_value", "value", "return abs(value)", [((-3,), 3), ((4,), 4)]),
+        "abs": FunctionSpec("abs_value", "value", "return abs(value)", [((-3,), 3), ((4,), 4)]),
+        "square": FunctionSpec("square", "value", "return value * value", [((3,), 9), ((4,), 16)]),
+        "double": FunctionSpec("double", "value", "return value * 2", [((3,), 6), ((4,), 8)]),
+        "negate": FunctionSpec("negate", "value", "return -value", [((3,), -3), ((-2,), 2)]),
         "clamp": FunctionSpec("clamp", "value, lo, hi", "return max(lo, min(hi, value))", [((5, 0, 10), 5), ((-1, 0, 10), 0)]),
         "celsius_to_fahrenheit": FunctionSpec(
             "celsius_to_fahrenheit",
@@ -166,7 +170,11 @@ def _spec_for_name(name: str) -> FunctionSpec:
     if canonical in catalog:
         spec = catalog[canonical]
         return FunctionSpec(name=name if name in catalog else canonical, args=spec.args, body=spec.body, cases=spec.cases)
-    return FunctionSpec(name=name, args="value", body="return value", cases=[((1,), 1), (("ok",), "ok")])
+    return None
+
+
+def is_identity_stub(spec: FunctionSpec) -> bool:
+    return spec.body.strip() == "return value" and spec.args.strip() == "value"
 
 
 def _is_generic_module_request(goal: str) -> bool:
@@ -199,6 +207,8 @@ def infer_conversions(goal: str) -> List[FunctionSpec]:
         if source_at is None or target_at is None or source_at >= target_at:
             continue
         spec = _spec_for_name(name)
+        if spec is None:
+            continue
         if spec.name not in {item.name for item in found}:
             found.append(spec)
     return found
@@ -211,24 +221,40 @@ def infer_comparisons(goal: str) -> List[FunctionSpec]:
     if re.search(r"\b(larger|greater|biggest|highest) of\b", lower) or re.search(
         r"\blarger of two\b", lower
     ):
-        found.append(_spec_for_name("larger"))
+        spec = _spec_for_name("larger")
+        if spec is not None:
+            found.append(spec)
     if re.search(r"\b(smaller|lesser|lowest|smallest) of\b", lower):
-        found.append(_spec_for_name("smaller"))
+        spec = _spec_for_name("smaller")
+        if spec is not None:
+            found.append(spec)
     return found
 
 
 def parse_coding_goal(goal: str) -> CodingGoalSpec:
     functions: List[FunctionSpec] = []
     seen = set()
+    unknown: List[str] = []
     for spec in infer_conversions(goal) + infer_comparisons(goal):
         if spec.name not in seen:
             functions.append(spec)
             seen.add(spec.name)
     for name in extract_function_names(goal):
-        if name not in seen:
-            functions.append(_spec_for_name(name))
-            seen.add(name)
+        if name in seen:
+            continue
+        spec = _spec_for_name(name)
+        if spec is None:
+            unknown.append(name)
+            continue
+        functions.append(spec)
+        seen.add(name)
+    # Named functions we cannot implement must not become identity stubs
+    # that generate their own passing tests.
+    if unknown:
+        return CodingGoalSpec(functions=[], project=False)
     if not functions and _is_generic_module_request(goal):
-        functions = [_spec_for_name("add")]
+        fallback = _spec_for_name("add")
+        if fallback is not None:
+            functions = [fallback]
     project = bool(re.search(r"\b(project|package|multi-file|multiple files)\b", goal, flags=re.IGNORECASE))
     return CodingGoalSpec(functions=functions, project=project)

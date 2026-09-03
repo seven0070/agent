@@ -114,12 +114,12 @@ def test_orchestrator_coding_goal_integration() -> None:
 
 
 def test_jcode_implements_requested_functions_not_a_fixed_stub() -> None:
-    """Jcode must implement the functions named in the goal, not a hardcoded add_numbers stub."""
+    """Named catalog functions must be implemented as themselves, not add_numbers."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         adapter = JcodeAdapter(workspace_dir=tmp_dir)
         task = CodingTask(
             task_id="ct-ops-1",
-            goal="Create python functions scale and offset with tests",
+            goal="Create python functions square and double with tests",
             workspace_dir=tmp_dir,
             test_command="pytest",
         )
@@ -130,9 +130,13 @@ def test_jcode_implements_requested_functions_not_a_fixed_stub() -> None:
         assert os.path.isfile(module_path)
         assert os.path.isfile(test_path)
         source = open(module_path, encoding="utf-8").read()
-        assert "def scale(" in source
-        assert "def offset(" in source
+        assert "def square(" in source
+        assert "def double(" in source
         assert "def add_numbers(" not in source
+        ns = {}
+        exec(source, ns)
+        assert ns["square"](3) == 9
+        assert ns["double"](4) == 8
         assert result.tests_run >= 1
         assert result.tests_passed >= 1
         assert result.tests_failed == 0
@@ -294,6 +298,25 @@ def test_jcode_larger_of_two_without_named_function() -> None:
         ns = {}
         exec(open(os.path.join(tmp_dir, "module.py"), encoding="utf-8").read(), ns)
         assert ns["larger"](3, 1) == 3
+
+
+def test_jcode_unknown_named_functions_fail_closed_not_identity_stubs() -> None:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        adapter = JcodeAdapter(workspace_dir=tmp_dir)
+        result = adapter.execute_coding_task(
+            CodingTask(
+                task_id="ct-stub",
+                goal="Create python functions scale and offset with tests",
+                workspace_dir=tmp_dir,
+                test_command="pytest",
+            )
+        )
+        assert result.status in ("failed", "error")
+        module_path = os.path.join(tmp_dir, "module.py")
+        if os.path.isfile(module_path):
+            source = open(module_path, encoding="utf-8").read()
+            assert "return value" not in source
+        assert "Could not determine the requested program" in " ".join(result.errors)
 
 
 def test_jcode_fails_honestly_when_goal_cannot_be_implemented() -> None:

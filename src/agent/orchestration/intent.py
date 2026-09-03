@@ -27,7 +27,8 @@ CAPABILITY_UNAVAILABLE = "capability-unavailable"
 _ARITH_TOKEN = r"(\d+(?:\.\d+)?\s*[\+\-\*/]+\s*\d+(?:\.\d+)?)"
 _FILENAME = r"[A-Za-z0-9][A-Za-z0-9._-]*\.[A-Za-z0-9]+"
 _WORK_HINT = re.compile(
-    r"\b(email|e-mail|send|download|install|deploy|browse|tweet|slack|sms|purchase|buy|pay)\b",
+    r"\b(email|e-mail|send|download|install|deploy|browse|tweet|slack|sms|purchase|buy|pay|"
+    r"delete|remove|erase|wipe|upload|summarize|translate|search the web|google)\b",
     flags=re.IGNORECASE,
 )
 
@@ -138,7 +139,10 @@ def _data_query_outcome(lower: str, names: List[str]) -> bool:
     has_data = any(n.lower().endswith(".json") or n.lower().endswith(".csv") for n in names)
     mentions_data = bool(re.search(r"\b(json|csv)\b", lower)) or has_data
     aggregating = bool(
-        re.search(r"\b(highest|lowest|which|who has|max|min|largest|smallest)\b", lower)
+        re.search(
+            r"\b(highest|lowest|which|who has|max|min|largest|smallest|average|mean|how many|count)\b",
+            lower,
+        )
     )
     return mentions_data and aggregating
 

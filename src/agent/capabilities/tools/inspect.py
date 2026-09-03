@@ -70,8 +70,13 @@ def inspect_structured_data(raw: str, query: str) -> str:
         raise ValueError("No structured records found in the provided data.")
 
     lower = query.lower()
+    want_count = bool(re.search(r"\b(how many|count|number of)\b", lower))
+    want_avg = bool(re.search(r"\b(average|mean)\b", lower))
     want_max = bool(re.search(r"\b(highest|max|largest|most|top)\b", lower))
     want_min = bool(re.search(r"\b(lowest|min|smallest|least|bottom)\b", lower))
+    if want_count and not (want_avg or want_max or want_min):
+        return f"{len(records)} records."
+
     fields = _numeric_fields(records)
     if not fields:
         return json.dumps(records, indent=2)
@@ -81,6 +86,11 @@ def inspect_structured_data(raw: str, query: str) -> str:
     scored = [(row, value) for row, value in scored if value is not None]
     if not scored:
         return json.dumps(records, indent=2)
+
+    if want_avg:
+        avg = sum(value for _, value in scored) / len(scored)
+        rendered = avg if avg != int(avg) else int(avg)
+        return f"The average {field} is {rendered}."
 
     if want_min and not want_max:
         winner, value = min(scored, key=lambda item: item[1])

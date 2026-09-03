@@ -144,7 +144,11 @@ def failed_honestly() -> CheckFn:
         if "mocked agentscope response content" in blob:
             return False, "mock presented as success"
         if ctx.get("plan_status") == "failed" and (
-            "unavailable" in blob or "no real operation" in blob or "not implemented" in blob
+            "unavailable" in blob
+            or "no real operation" in blob
+            or "not implemented" in blob
+            or "could not determine the requested program" in blob
+            or "no files were changed" in blob
         ):
             return True, "honest failure"
         return False, f"expected honest failure, status={ctx.get('plan_status')} output={ctx.get('output')!r}"
@@ -525,6 +529,46 @@ def build_open_ended_cases() -> List[BenchmarkCase]:
             case_id="oe-email-unavailable",
             category="failure-reporting",
             prompt="Email this report to the whole team.",
+            checks=[
+                used_intent("unsupported"),
+                failed_honestly(),
+                not_mocked(),
+            ],
+        ),
+        BenchmarkCase(
+            case_id="oe-unknown-functions",
+            category="failure-reporting",
+            prompt="A program with scale and offset helpers, with tests.",
+            checks=[
+                used_intent("build_program"),
+                used_tool("coding-engine-v1"),
+                failed_honestly(),
+                not_mocked(),
+                file_missing("module.py"),
+            ],
+        ),
+        BenchmarkCase(
+            case_id="oe-json-average",
+            category="query-data",
+            prompt="What is the average score in this JSON?",
+            setup_files=[
+                (
+                    "totals.json",
+                    '[{"user": "sam", "score": 10}, {"user": "ada", "score": 20}, {"user": "lee", "score": 30}]',
+                )
+            ],
+            checks=[
+                used_intent("query_data"),
+                used_tool("inspect_data-v1"),
+                output_contains("20"),
+                not_mocked(),
+                plan_completed(),
+            ],
+        ),
+        BenchmarkCase(
+            case_id="oe-delete-unavailable",
+            category="failure-reporting",
+            prompt="Delete the note from my desktop.",
             checks=[
                 used_intent("unsupported"),
                 failed_honestly(),
