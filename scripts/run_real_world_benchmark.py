@@ -21,6 +21,7 @@ from tests.benchmark.cases import (  # noqa: E402
     build_capability_cases,
     build_cases,
     build_open_ended_cases,
+    build_planning_cases,
 )
 
 
@@ -313,7 +314,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run Agent real-world benchmarks")
     parser.add_argument(
         "--suite",
-        choices=["core", "open-ended", "capability", "all"],
+        choices=["core", "open-ended", "capability", "planning", "all"],
         default="all",
         help="Which benchmark suite to run (default: all)",
     )
@@ -325,6 +326,8 @@ def main() -> int:
         suites.append(("open-ended", build_open_ended_cases()))
     if args.suite in ("capability", "all"):
         suites.append(("capability", build_capability_cases()))
+    if args.suite in ("planning", "all"):
+        suites.append(("planning", build_planning_cases()))
 
     reports = [_run_suite(name, cases) for name, cases in suites]
     report_path = ROOT / "tests" / "benchmark" / "last_report.json"

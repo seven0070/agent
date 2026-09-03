@@ -5,7 +5,7 @@ Planner Interface and Dynamic Plan Decomposer.
 import uuid
 import re
 from typing import Dict, Any, Optional, List
-from agent.orchestration.models import Plan, PlanTask, TaskState
+from agent.orchestration.models import Plan, PlanTask
 
 _FILENAME_TOKEN = r"[A-Za-z0-9][A-Za-z0-9._-]*\.[A-Za-z0-9]+"
 
@@ -151,165 +151,38 @@ class RuleBasedPlanner:
             strategy = {}
         extra_retries = int((strategy.get("proposed_changes") or {}).get("strategy_patch", {}).get("max_retries") or 2)
 
-        from agent.orchestration.intent import (
-            BUILD_PROGRAM,
-            CAPABILITY_UNAVAILABLE,
-            CHANGE_PROGRAM,
-            COMPUTE,
-            CONVERSE,
-            QUERY_DATA,
-            READ_TEXT,
-            READ_THEN_WRITE,
-            WRITE_TEXT,
-            classify_intent,
-        )
+        from agent.orchestration.decompose import assign_ids_and_placeholders, compose_operations
+        from agent.orchestration.intent import classify_intent
 
         intent = classify_intent(goal, workspace_dir=workspace_dir)
-        kind = intent.kind
-        slots = intent.slots
+        ops = assign_ids_and_placeholders(compose_operations(goal, workspace_dir=workspace_dir))
+        if session_hints and session_hints.get("last_output"):
+            prior = last_result_text(str(session_hints.get("last_output") or ""))
+            for op in ops:
+                content = str(op.inputs.get("content") or "")
+                if op.kind == "write" and not content.strip() and "$" not in content:
+                    op.inputs["content"] = prior
 
-        if kind in (BUILD_PROGRAM, CHANGE_PROGRAM):
-            t1 = PlanTask(
-                id="task_code_1",
-                description="Execute coding task with Jcode engine",
-                dependencies=[],
-                required_tool_id="coding-engine-v1",
-                inputs={"goal": goal},
-                max_retries=extra_retries,
+        prev_id = None
+        for op in ops:
+            deps: List[str] = []
+            for value in op.inputs.values():
+                if isinstance(value, str):
+                    for match in re.finditer(r"\$([A-Za-z0-9_]+)\.output", value):
+                        dep = match.group(1)
+                        if dep not in deps:
+                            deps.append(dep)
+            if not deps and prev_id and op.kind == "write":
+                deps = [prev_id]
+            tasks[op.id] = PlanTask(
+                id=op.id,
+                description=op.description,
+                dependencies=deps,
+                required_tool_id=op.tool_id,
+                inputs=dict(op.inputs),
+                max_retries=0 if op.kind == "unavailable" else extra_retries,
             )
-            tasks[t1.id] = t1
-
-        elif kind == READ_THEN_WRITE:
-            source = slots.get("source") or goal.strip()
-            dest = slots.get("dest") or "summary.txt"
-            t1 = PlanTask(
-                id="task_read_1",
-                description="Read workspace file",
-                dependencies=[],
-                required_tool_id="read_file-v1",
-                inputs={"relative_path": source},
-                max_retries=extra_retries,
-            )
-            t2 = PlanTask(
-                id="task_write_2",
-                description="Write prior file contents to the destination",
-                dependencies=["task_read_1"],
-                required_tool_id="write_file-v1",
-                inputs={"relative_path": dest, "content": "$task_read_1.output"},
-                max_retries=extra_retries,
-            )
-            tasks[t1.id] = t1
-            tasks[t2.id] = t2
-
-        elif kind == READ_TEXT:
-            rel_path = slots.get("filename") or goal.strip()
-            t1 = PlanTask(
-                id="task_read_1",
-                description="Read workspace file",
-                dependencies=[],
-                required_tool_id="read_file-v1",
-                inputs={"relative_path": rel_path},
-                max_retries=extra_retries,
-            )
-            tasks[t1.id] = t1
-
-        elif kind == QUERY_DATA:
-            rel_path = slots.get("filename")
-            if not rel_path:
-                t1 = PlanTask(
-                    id="task_unavailable_1",
-                    description="Structured data file is required but was not found",
-                    dependencies=[],
-                    required_tool_id=CAPABILITY_UNAVAILABLE,
-                    inputs={"goal": goal},
-                    max_retries=0,
-                )
-                tasks[t1.id] = t1
-            else:
-                t1 = PlanTask(
-                    id="task_inspect_1",
-                    description="Inspect structured workspace data",
-                    dependencies=[],
-                    required_tool_id="inspect_data-v1",
-                    inputs={"relative_path": rel_path, "query": slots.get("query") or goal},
-                    max_retries=extra_retries,
-                )
-                tasks[t1.id] = t1
-
-        elif kind == COMPUTE:
-            expr = slots.get("expression") or self._extract_expression(goal)
-            t1 = PlanTask(
-                id="task_calc_1",
-                description="Evaluate mathematical calculation",
-                dependencies=[],
-                required_tool_id="calculator-v1",
-                inputs={"expression": expr},
-                max_retries=extra_retries,
-            )
-            tasks[t1.id] = t1
-            save_as = slots.get("save_as")
-            if save_as:
-                t2 = PlanTask(
-                    id="task_write_2",
-                    description="Write calculation result to workspace file",
-                    dependencies=["task_calc_1"],
-                    required_tool_id="write_file-v1",
-                    inputs={"relative_path": save_as, "content": "$task_calc_1.output"},
-                    max_retries=extra_retries,
-                )
-                tasks[t2.id] = t2
-
-        elif kind == WRITE_TEXT:
-            ops = extract_file_write_ops(goal)
-            if not ops:
-                target_name = slots.get("filename") or "note.txt"
-                content = slots.get("content") or extract_file_content(goal)
-                if not content and session_hints and session_hints.get("last_output"):
-                    content = last_result_text(str(session_hints.get("last_output") or ""))
-                ops = [(target_name, content)]
-            elif session_hints and session_hints.get("last_output"):
-                filled = []
-                prior = last_result_text(str(session_hints.get("last_output") or ""))
-                for target_name, content in ops:
-                    if not content and prior:
-                        filled.append((target_name, prior))
-                    else:
-                        filled.append((target_name, content))
-                ops = filled
-            prev = None
-            for index, (target_name, content) in enumerate(ops, start=1):
-                tid = f"task_write_{index}"
-                t = PlanTask(
-                    id=tid,
-                    description="Write requested content to a workspace file",
-                    dependencies=[prev] if prev else [],
-                    required_tool_id="write_file-v1",
-                    inputs={"relative_path": target_name, "content": content},
-                    max_retries=extra_retries,
-                )
-                tasks[tid] = t
-                prev = tid
-
-        elif kind == CONVERSE:
-            t1 = PlanTask(
-                id="task_gen_1",
-                description=f"Process goal: {goal}",
-                dependencies=[],
-                required_tool_id=None,
-                inputs={"prompt": goal},
-            )
-            tasks[t1.id] = t1
-
-        else:
-            t1 = PlanTask(
-                id="task_unavailable_1",
-                description="Requested capability is not available",
-                dependencies=[],
-                required_tool_id=CAPABILITY_UNAVAILABLE,
-                inputs={"goal": goal},
-                max_retries=0,
-            )
-            tasks[t1.id] = t1
+            prev_id = op.id
 
         return Plan(
             id=pid,
@@ -317,5 +190,9 @@ class RuleBasedPlanner:
             version="plan-v1",
             tasks=tasks,
             status="active",
-            metadata={"intent": kind, "intent_confidence": intent.confidence},
+            metadata={
+                "intent": intent.kind,
+                "intent_confidence": intent.confidence,
+                "op_count": len(ops),
+            },
         )

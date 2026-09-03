@@ -194,12 +194,11 @@ def _first_data_file(names: List[str]) -> Optional[str]:
 
 
 def _explicit_calculation(lower: str) -> bool:
-    return bool(
-        re.search(
-            r"\b(calculate|what is|what's|whats|how much is|times|multiplied|divided by|plus|minus)\b",
-            lower,
-        )
-    )
+    if re.search(r"\b(calculate|how much is|times|multiplied|divided by)\b", lower):
+        return True
+    if re.search(r"\bwhat(?:'s|s| is)\s+\d", lower):
+        return True
+    return False
 
 
 def _read_then_write_pair(goal: str, lower: str) -> Optional[tuple]:
@@ -237,9 +236,20 @@ def classify_intent(goal: str, workspace_dir: Optional[str] = None) -> Intent:
             slots={"source": pair[0], "dest": pair[1]},
         )
 
+    if _data_query_outcome(lower, names):
+        named = _safe_filename(filename_match.group(0) if filename_match else None)
+        if named and not (named.lower().endswith(".json") or named.lower().endswith(".csv")):
+            named = _first_data_file(names) or named
+        return Intent(
+            kind=QUERY_DATA,
+            confidence=3.0,
+            slots={"filename": named or _first_data_file(names), "query": text},
+        )
+
     persist = _persist_outcome(lower, filename_in_goal)
-    if math and not software and not (persist and not _explicit_calculation(lower)):
-        slots: Dict[str, Any] = {"expression": math}
+    explicit_calc = _explicit_calculation(lower)
+    if not software and (explicit_calc or math) and not (persist and not explicit_calc):
+        slots: Dict[str, Any] = {"expression": math or text}
         save_name = _safe_filename(extract_filename(text))
         if save_name or re.search(r"\b(save|write|report)\b", lower):
             slots["save_as"] = save_name or "calc_result.txt"
@@ -254,14 +264,6 @@ def classify_intent(goal: str, workspace_dir: Optional[str] = None) -> Intent:
                 "goal": text,
                 "project": bool(re.search(r"\b(project|package|multi-file|multiple files)\b", lower)),
             },
-        )
-
-    if _data_query_outcome(lower, names):
-        named = _safe_filename(filename_match.group(0) if filename_match else None)
-        return Intent(
-            kind=QUERY_DATA,
-            confidence=3.0,
-            slots={"filename": named or _first_data_file(names), "query": text},
         )
 
     if persist:
