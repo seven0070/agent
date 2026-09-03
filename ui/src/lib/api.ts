@@ -1,7 +1,9 @@
+import type { JsonValue } from "./types";
+
 export type StreamEvent = {
   event_type: string;
   session_id?: string;
-  payload?: Record<string, unknown>;
+  payload?: Record<string, JsonValue>;
   timestamp?: string;
 };
 
@@ -33,6 +35,14 @@ export async function json<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
   }
   return res.json() as Promise<T>;
+}
+
+export async function postJson<T>(path: string, body: unknown): Promise<T> {
+  return json<T>(path, { method: "POST", body: JSON.stringify(body) });
+}
+
+export async function deleteJson<T>(path: string): Promise<T> {
+  return json<T>(path, { method: "DELETE" });
 }
 
 export async function streamGoal(

@@ -10,6 +10,7 @@ export const PRIMARY_SECTIONS = [
   { id: "models", label: "Models" },
   { id: "evaluation", label: "Evaluation" },
   { id: "evolution", label: "Evolution" },
+  { id: "security", label: "Security" },
 ] as const;
 
 export const FOOTER_SECTIONS = [{ id: "settings", label: "Settings" }] as const;
