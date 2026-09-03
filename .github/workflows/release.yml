@@ -188,9 +188,11 @@ jobs:
           - os: windows-latest
             platform: windows
             triple: x86_64-pc-windows-msvc
+            bundles: msi,nsis
           - os: ubuntu-latest
             platform: linux
             triple: x86_64-unknown-linux-gnu
+            bundles: deb,appimage
 
     steps:
       - name: Checkout Repository
@@ -239,7 +241,8 @@ jobs:
         run: npm --prefix ui ci
 
       - name: Build Tauri Desktop Package
-        run: npx --prefix ui tauri build
+        working-directory: ui
+        run: npx tauri build --bundles ${{ matrix.bundles }}
 
       - name: Verify Desktop Artifacts & Generate Checksums
         shell: bash

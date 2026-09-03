@@ -41,8 +41,10 @@ npx --prefix ui tauri dev
 
 ```bash
 python scripts/build_backend_sidecar.py
-npx --prefix ui tauri build
+cd ui && npx tauri build
 ```
+
+`npx tauri build` must run with cwd `ui/` so `beforeBuildCommand` (`npm run build`) resolves `ui/package.json`. CI passes `--bundles msi,nsis` on Windows and `--bundles deb,appimage` on Linux.
 
 CI targets: Windows x64 (MSI/NSIS) and Linux x64 (deb/AppImage). macOS is not claimed.
 

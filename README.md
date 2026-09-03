@@ -127,7 +127,7 @@ bundles it.
 
 ```bash
 python scripts/build_backend_sidecar.py
-npx --prefix ui tauri build
+cd ui && npx tauri build
 ```
 
 Data directory:

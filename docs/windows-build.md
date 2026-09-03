@@ -23,7 +23,7 @@ builds. Release builds never spawn Python.
 
 ```bash
 python scripts/build_backend_sidecar.py --triple x86_64-pc-windows-msvc
-npx --prefix ui tauri build
+cd ui && npx tauri build --bundles msi,nsis
 ```
 
 The Windows installer is emitted under `src-tauri/target/release/bundle/` as
