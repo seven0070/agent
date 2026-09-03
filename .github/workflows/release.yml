@@ -241,7 +241,11 @@ jobs:
         run: npm --prefix ui ci
 
       - name: Build Tauri Desktop Package
-        run: npx --prefix ui tauri build --bundles ${{ matrix.bundles }}
+        shell: bash
+        run: |
+          test -f src-tauri/tauri.conf.json
+          test -f ui/node_modules/@tauri-apps/cli/tauri.js
+          node ui/node_modules/@tauri-apps/cli/tauri.js build --bundles ${{ matrix.bundles }}
 
       - name: Verify Desktop Artifacts & Generate Checksums
         shell: bash

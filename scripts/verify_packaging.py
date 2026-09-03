@@ -52,8 +52,10 @@ def main() -> int:
         errors.append("CI does not build the sidecar via scripts/build_backend_sidecar.py")
     if "working-directory: ui" in workflow:
         errors.append("CI must not run tauri build from ui/; tauri.conf.json lives in src-tauri/")
-    if "npx --prefix ui tauri build" not in workflow:
-        errors.append("CI must invoke Tauri from repository root via npx --prefix ui tauri build")
+    if "ui/node_modules/@tauri-apps/cli/tauri.js" not in workflow:
+        errors.append("CI must invoke the installed Tauri CLI from repository root without npx --prefix cwd shift")
+    if "npx --prefix ui tauri" in workflow:
+        errors.append("npx --prefix ui tauri shifts cwd to ui/ and breaks sibling src-tauri discovery hooks")
     if "--bundles" not in workflow:
         errors.append("CI must pass platform-specific --bundles (msi/nsis vs deb/appimage)")
     before_build = conf.get("build", {}).get("beforeBuildCommand") or ""
