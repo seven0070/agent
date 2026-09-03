@@ -98,28 +98,39 @@ class JcodeAdapter(CodingEngineInterface):
                 )
             else:
                 from agent.coding.generator import (
-                    generate_module_source,
+                    apply_function_patches,
                     generate_workspace_files,
                     infer_spec_from_workspace,
                     patch_existing_source_files,
+                    patch_identifier_assignments,
                 )
                 from agent.coding.goal_spec import parse_coding_goal
 
+                requested = parse_coding_goal(task.goal)
+                inferred = infer_spec_from_workspace(workspace_root)
                 repair_goal = bool(
-                    re.search(r"\b(debug|fix|repair|broken|failing)\b", task.goal, flags=re.IGNORECASE)
+                    re.search(r"\b(debug|fix|repair|broken|failing|inspect)\b", task.goal, flags=re.IGNORECASE)
                 )
-                inferred = infer_spec_from_workspace(workspace_root) if repair_goal else None
-                patched = None if inferred is not None else patch_existing_source_files(workspace_root, task.goal)
+                if inferred is not None and requested.functions and not repair_goal:
+                    requested_names = {fn.name for fn in requested.functions}
+                    inferred_names = {fn.name for fn in inferred.functions}
+                    if requested_names - inferred_names:
+                        inferred = None
+                patched = None
+                if inferred is None:
+                    patched = patch_identifier_assignments(workspace_root, task.goal)
+                if inferred is None and patched is None:
+                    patched = patch_existing_source_files(workspace_root, task.goal)
                 if inferred is not None:
                     spec = inferred
-                    generated = {spec.module_name: generate_module_source(spec)}
+                    generated = apply_function_patches(workspace_root, spec)
                     generated_test = spec.test_name
                 elif patched:
                     spec = None
                     generated = patched
                     generated_test = None
                 else:
-                    spec = parse_coding_goal(task.goal)
+                    spec = requested
                     if not spec.functions:
                         raise ValueError(
                             "Could not determine the requested program from the goal. No files were changed."
@@ -180,8 +191,46 @@ class JcodeAdapter(CodingEngineInterface):
                     self._emit_event("tool_executed", session_id, task.task_id, {"action": "run_tests", "status": "passed"})
                 else:
                     tests_failed = 1
-                    errors.append(f"Test suite failure: {proc.get('stderr')}")
                     self._emit_event("tool_executed", session_id, task.task_id, {"action": "run_tests", "status": "failed"})
+                    for _attempt in range(2):
+                        from agent.coding.generator import apply_function_patches, infer_spec_from_workspace
+
+                        repair_spec = infer_spec_from_workspace(workspace_root)
+                        if repair_spec is None:
+                            break
+                        repaired = apply_function_patches(workspace_root, repair_spec)
+                        if not repaired:
+                            break
+                        for rel_path, content in repaired.items():
+                            abs_path = self.workspace_restrictor.validate_and_resolve(rel_path)
+                            parent = os.path.dirname(abs_path)
+                            if parent:
+                                os.makedirs(parent, exist_ok=True)
+                            with open(abs_path, "w", encoding="utf-8") as handle:
+                                handle.write(content)
+                            rel_norm = rel_path.replace("\\", "/")
+                            if rel_norm not in files_changed:
+                                files_changed.append(rel_norm)
+                            self._emit_event(
+                                "tool_executed",
+                                session_id,
+                                task.task_id,
+                                {"action": "repair_file", "file": rel_norm},
+                            )
+                        proc = run_workspace_tests(workspace_root, test_target=test_file)
+                        tests_run += 1
+                        if proc.get("success"):
+                            tests_passed = 1
+                            tests_failed = 0
+                            self._emit_event(
+                                "tool_executed",
+                                session_id,
+                                task.task_id,
+                                {"action": "run_tests", "status": "passed"},
+                            )
+                            break
+                    if tests_failed:
+                        errors.append(f"Test suite failure: {proc.get('stderr')}")
 
             elapsed_ms = (time.perf_counter() - start_time) * 1000
             self._emit_event("turn_completed", session_id, task.task_id, {"files_changed": files_changed})

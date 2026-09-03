@@ -366,3 +366,79 @@ def test_jcode_fails_honestly_when_goal_cannot_be_implemented() -> None:
         )
         assert result.status in ("failed", "error")
         assert not os.path.isfile(os.path.join(tmp_dir, "module.py"))
+
+
+def test_jcode_repairs_nested_repo_from_existing_tests() -> None:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        os.makedirs(os.path.join(tmp_dir, "pkg"))
+        os.makedirs(os.path.join(tmp_dir, "tests"))
+        open(os.path.join(tmp_dir, "pkg", "__init__.py"), "w", encoding="utf-8").write("")
+        open(os.path.join(tmp_dir, "pkg", "mathutil.py"), "w", encoding="utf-8").write(
+            "def cube(n):\n    return 0\n"
+        )
+        open(os.path.join(tmp_dir, "tests", "test_mathutil.py"), "w", encoding="utf-8").write(
+            "from pkg.mathutil import cube\n\n\ndef test_cube():\n    assert cube(3) == 27\n    assert cube(2) == 8\n"
+        )
+        adapter = JcodeAdapter(workspace_dir=tmp_dir)
+        result = adapter.execute_coding_task(
+            CodingTask(
+                task_id="ct-repo-cube",
+                goal="Inspect this repository, fix the failing cube implementation, run the tests, and repair until they pass.",
+                workspace_dir=tmp_dir,
+                test_command="pytest",
+            )
+        )
+        assert result.status == "success"
+        ns: dict = {}
+        exec(open(os.path.join(tmp_dir, "pkg", "mathutil.py"), encoding="utf-8").read(), ns)
+        assert ns["cube"](3) == 27
+        assert ns["cube"](2) == 8
+        assert result.tests_failed == 0
+
+
+def test_jcode_infers_unary_repair_from_failing_tests() -> None:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        open(os.path.join(tmp_dir, "module.py"), "w", encoding="utf-8").write("def triple(n):\n    return n\n")
+        open(os.path.join(tmp_dir, "test_module.py"), "w", encoding="utf-8").write(
+            "from module import triple\n\n\ndef test_triple():\n    assert triple(3) == 9\n    assert triple(4) == 12\n"
+        )
+        adapter = JcodeAdapter(workspace_dir=tmp_dir)
+        result = adapter.execute_coding_task(
+            CodingTask(
+                task_id="ct-triple",
+                goal="Repair the failing python tests and retest until they pass.",
+                workspace_dir=tmp_dir,
+                test_command="pytest",
+            )
+        )
+        assert result.status == "success"
+        ns: dict = {}
+        exec(open(os.path.join(tmp_dir, "module.py"), encoding="utf-8").read(), ns)
+        assert ns["triple"](3) == 9
+        assert ns["triple"](4) == 12
+
+
+def test_jcode_patches_distinct_assignments_in_multiple_files() -> None:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        open(os.path.join(tmp_dir, "greet.py"), "w", encoding="utf-8").write(
+            'GREETING = "hi"\n\ndef greet():\n    return GREETING\n'
+        )
+        open(os.path.join(tmp_dir, "title.py"), "w", encoding="utf-8").write(
+            'TITLE = "old"\n\ndef title():\n    return TITLE\n'
+        )
+        adapter = JcodeAdapter(workspace_dir=tmp_dir)
+        result = adapter.execute_coding_task(
+            CodingTask(
+                task_id="ct-multi-assign",
+                goal="Change the greeting to Hello Agent and the title to Deep Mode.",
+                workspace_dir=tmp_dir,
+                test_command="pytest",
+            )
+        )
+        assert result.status == "success"
+        greet = open(os.path.join(tmp_dir, "greet.py"), encoding="utf-8").read()
+        title = open(os.path.join(tmp_dir, "title.py"), encoding="utf-8").read()
+        assert 'GREETING = "Hello Agent"' in greet
+        assert 'TITLE = "Deep Mode"' in title
+        assert 'GREETING = "Deep Mode"' not in greet
+        assert 'TITLE = "Hello Agent"' not in title

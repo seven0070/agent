@@ -25,6 +25,18 @@ UNSUPPORTED = "unsupported"
 
 CAPABILITY_UNAVAILABLE = "capability-unavailable"
 
+_PROVIDER_ALIASES = {
+    "openai": "openai",
+    "gpt": "openai",
+    "gpt-4": "openai",
+    "gpt-4o": "openai",
+    "anthropic": "anthropic",
+    "claude": "anthropic",
+    "ollama": "ollama",
+    "dashscope": "dashscope",
+    "qwen": "dashscope",
+}
+
 # Hyphen glued to digits (ticket-14-1788, 3-4pm) is not subtraction. Require
 # spaces around '-' or a non-hyphen operator.
 _ARITH_TOKEN = (
@@ -35,6 +47,10 @@ _FILENAME = r"[A-Za-z0-9][A-Za-z0-9._-]*\.[A-Za-z0-9]+"
 _WORK_HINT = re.compile(
     r"\b(email|e-mail|send|download|install|deploy|browse|tweet|slack|sms|purchase|buy|pay|"
     r"delete|remove|erase|wipe|upload|summarize|translate|search the web|google)\b",
+    flags=re.IGNORECASE,
+)
+_EXTERNAL_ACTION = re.compile(
+    r"\b(open|submit|publish|launch|post)\b",
     flags=re.IGNORECASE,
 )
 
@@ -176,7 +192,8 @@ def _read_outcome(lower: str, filename_in_goal: bool, names: List[str]) -> bool:
     look = bool(re.search(r"\b(what'?s in|what's inside|look at|show me|open|read)\b", lower))
     if re.search(r"\b(read file|open file|cat )\b", lower):
         return True
-    if look and (filename_in_goal or names):
+    mentioned = filename_in_goal or any(name.lower() in lower for name in names)
+    if look and mentioned:
         return True
     return False
 
@@ -191,6 +208,35 @@ def _first_data_file(names: List[str]) -> Optional[str]:
         if lower.endswith(".json") or lower.endswith(".csv"):
             return os.path.basename(name)
     return None
+
+
+def requested_provider(goal: str) -> Optional[str]:
+    """Return a named model provider if the goal asks to use one."""
+    lower = goal.lower()
+    for alias, provider in _PROVIDER_ALIASES.items():
+        if re.search(rf"\b{re.escape(alias)}\b", lower):
+            return provider
+    return None
+
+
+def provider_is_usable(provider: str) -> bool:
+    """True only when credentials or a live probe show the provider can run."""
+    from agent.models.provider import check_local_model_readiness, load_provider_credentials
+
+    creds = load_provider_credentials()
+    name = provider.lower()
+    if name == "mock":
+        return True
+    if name == "openai":
+        return bool(creds.get_key_value("openai"))
+    if name == "anthropic":
+        return bool(creds.get_key_value("anthropic"))
+    if name == "dashscope":
+        return bool(creds.get_key_value("dashscope"))
+    if name == "ollama":
+        status = check_local_model_readiness(creds.ollama_host)
+        return bool(status.get("reachable"))
+    return False
 
 
 def _explicit_calculation(lower: str) -> bool:
@@ -287,7 +333,14 @@ def classify_intent(goal: str, workspace_dir: Optional[str] = None) -> Intent:
     if _converse_outcome(lower) and not _WORK_HINT.search(lower):
         return Intent(kind=CONVERSE, confidence=2.0, slots={})
 
+    provider = requested_provider(text)
+    if provider and not provider_is_usable(provider):
+        return Intent(kind=UNSUPPORTED, confidence=3.0, slots={"goal": text, "provider": provider})
+
     if _WORK_HINT.search(lower):
+        return Intent(kind=UNSUPPORTED, confidence=2.0, slots={"goal": text})
+
+    if _EXTERNAL_ACTION.search(lower) and not filename_in_goal and not persist and not software:
         return Intent(kind=UNSUPPORTED, confidence=2.0, slots={"goal": text})
 
     return Intent(kind=CONVERSE, confidence=0.5, slots={})

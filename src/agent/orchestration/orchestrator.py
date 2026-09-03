@@ -182,6 +182,11 @@ class PlanOrchestrator:
             if task.outputs is None or str(task.outputs).strip() == "":
                 task.error = "Empty intermediate result"
                 return False
+        if task.required_tool_id == "coding-engine-v1":
+            meta = task.metadata or {}
+            if meta.get("tests_passed") == 0 and meta.get("files_changed") and "Test suite failure" in str(task.outputs or ""):
+                task.error = "Coding result failed verification: tests did not pass"
+                return False
         if task.required_tool_id == "write_file-v1":
             rel = str(resolved_inputs.get("relative_path") or "")
             expected = str(resolved_inputs.get("content") or "")

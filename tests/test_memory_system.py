@@ -10,6 +10,7 @@ from agent.memory import (
     MemoryItem,
     MemoryStrategySpec,
     SessionMemoryManager,
+    WorkingMemory,
     SQLiteMemoryBackend,
     MockEmbeddingModel,
     RAGEngine,
@@ -35,6 +36,18 @@ def test_session_memory_isolation() -> None:
     mgr.clear_session("session-A")
     assert len(mgr.get_session_history("session-A")) == 0
     assert len(mgr.get_session_history("session-B")) == 1
+
+
+def test_working_memory_retrieves_relevant_artifacts_only() -> None:
+    mgr = SessionMemoryManager()
+    mgr.update_working_memory("s1", goal="Calculate 12 + 30")
+    mgr.record_artifact("s1", "sum.txt", "42")
+    mgr.record_artifact("s1", "noise.txt", "ignore-me")
+    mgr.record_step("s1", "Evaluate calculation", tool_id="calculator-v1", output="42")
+    relevant = mgr.get_working_memory("s1").relevant_for("Read sum.txt and write status.txt")
+    assert relevant["artifacts"].get("sum.txt") == "42"
+    assert "noise.txt" not in relevant["artifacts"]
+    assert isinstance(WorkingMemory(), WorkingMemory)
 
 def test_sqlite_memory_crud() -> None:
     """Tests CRUD operations in persistent SQLite memory backend."""

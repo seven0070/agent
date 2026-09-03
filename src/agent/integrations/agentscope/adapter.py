@@ -126,11 +126,19 @@ class AgentScopeAdapter:
             workspace_dir = self.broker.workspace_manager.workspace_dir
         session_hints: Dict[str, Any] = {}
         if task.session_id and self.context_builder.session_manager:
-            history = self.context_builder.session_manager.get_session_history(task.session_id, limit=12)
-            for item in reversed(history):
-                if item.source in {"agent", "assistant"} and (item.content or "").strip():
-                    session_hints["last_output"] = item.content
-                    break
+            working = self.context_builder.session_manager.get_working_memory(task.session_id)
+            relevant = working.relevant_for(task.prompt)
+            session_hints["working_memory"] = relevant
+            if relevant.get("last_outputs"):
+                session_hints["last_output"] = str(list(relevant["last_outputs"].values())[-1])
+            elif relevant.get("artifacts"):
+                session_hints["last_output"] = str(list(relevant["artifacts"].values())[-1])
+            if not session_hints.get("last_output"):
+                history = self.context_builder.session_manager.get_session_history(task.session_id, limit=12)
+                for item in reversed(history):
+                    if item.source in {"agent", "assistant"} and (item.content or "").strip():
+                        session_hints["last_output"] = item.content
+                        break
         plan = self.planner.create_plan(
             goal=task.prompt,
             workspace_dir=workspace_dir,
@@ -155,6 +163,30 @@ class AgentScopeAdapter:
                 meta = t.metadata or {}
                 if meta.get("files_changed"):
                     files_changed.extend(list(meta["files_changed"]))
+            if task.session_id and self.context_builder.session_manager:
+                mgr = self.context_builder.session_manager
+                mgr.update_working_memory(
+                    task.session_id,
+                    goal=task.prompt,
+                    active_plan_id=completed_plan.id,
+                )
+                for t in completed_plan.tasks.values():
+                    mgr.record_step(
+                        task.session_id,
+                        t.description,
+                        tool_id=t.required_tool_id,
+                        output=t.outputs if t.outputs is not None else t.error,
+                    )
+                    resolved = (t.metadata or {}).get("resolved_inputs") or {}
+                    if t.required_tool_id == "write_file-v1":
+                        rel = str(resolved.get("relative_path") or t.inputs.get("relative_path") or "")
+                        content = str(resolved.get("content") or "")
+                        if rel:
+                            mgr.record_artifact(task.session_id, rel, content or str(t.outputs or ""))
+                    if t.required_tool_id == "coding-engine-v1":
+                        mgr.record_step(task.session_id, "coding-complete", tool_id="coding-engine-v1", output=t.outputs)
+                        for rel in (t.metadata or {}).get("files_changed") or []:
+                            mgr.record_artifact(task.session_id, str(rel), str(t.outputs or ""))
             final_output = "\n".join(outputs_summary)
             exec_result = ModelExecutionResult(
                 model_id="orchestrator",
@@ -167,7 +199,20 @@ class AgentScopeAdapter:
             from agent.orchestration.intent import CONVERSE, classify_intent
 
             intent = classify_intent(task.prompt, workspace_dir=workspace_dir)
-            if intent.kind != CONVERSE:
+            from agent.orchestration.intent import requested_provider
+
+            named_provider = requested_provider(task.prompt)
+            selected = None
+            try:
+                selected = self.router.select_model()
+            except Exception:
+                selected = None
+            provider_mismatch = bool(
+                named_provider
+                and named_provider != "mock"
+                and (selected is None or selected.provider.lower() != named_provider)
+            )
+            if intent.kind != CONVERSE or provider_mismatch:
                 exec_result = ModelExecutionResult(
                     model_id="orchestrator",
                     provider="orchestration",

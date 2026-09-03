@@ -26,10 +26,11 @@ class ModelRegistry:
         return sorted(self._models.values(), key=lambda m: m.priority)
 
     def list_enabled(self) -> List[ModelSpec]:
-        """Lists all enabled models sorted by priority."""
+        """Lists enabled models that are not disabled or unavailable."""
+        blocked = {ModelHealthStatus.DISABLED, ModelHealthStatus.UNAVAILABLE}
         return [
             m for m in sorted(self._models.values(), key=lambda m: m.priority)
-            if m.enabled and m.health_status != ModelHealthStatus.DISABLED
+            if m.enabled and m.health_status not in blocked
         ]
 
     def update_health(self, model_id: str, status: ModelHealthStatus) -> None:

@@ -51,14 +51,33 @@ class ContextBuilder:
                 rag_lines = [f"- [{chunk['title']}] {chunk['content']}" for chunk in rag_chunks]
                 context_sections.append("### Relevant Knowledge / Documentation:\n" + "\n".join(rag_lines))
 
-        # 3. Retrieve Session Conversation History
+        # 3. Structured working memory (goal, artifacts, prior outputs) — relevant subset only
+        if session_id and self.session_manager and hasattr(self.session_manager, "get_working_memory"):
+            working = self.session_manager.get_working_memory(session_id).relevant_for(task_prompt)
+            wm_lines: List[str] = []
+            if working.get("goal"):
+                wm_lines.append(f"- goal: {working['goal']}")
+            if working.get("active_plan_id"):
+                wm_lines.append(f"- plan: {working['active_plan_id']}")
+            for step in working.get("completed_steps") or []:
+                wm_lines.append(f"- step: {step}")
+            for path, content in (working.get("artifacts") or {}).items():
+                wm_lines.append(f"- artifact {path}: {content}")
+            for tool_id, output in (working.get("last_outputs") or {}).items():
+                wm_lines.append(f"- {tool_id}: {output}")
+            for decision in working.get("decisions") or []:
+                wm_lines.append(f"- decision: {decision}")
+            if wm_lines:
+                context_sections.append("### Working Memory:\n" + "\n".join(wm_lines))
+
+        # 4. Retrieve Session Conversation History
         if session_id and self.session_manager:
             session_turns = self.session_manager.get_session_history(session_id, limit=5)
             if session_turns:
                 turn_lines = [f"{m.source.capitalize()}: {m.content}" for m in session_turns]
                 context_sections.append("### Recent Conversation History:\n" + "\n".join(turn_lines))
 
-        # 4. Append Task Prompt
+        # 5. Append Task Prompt
         context_sections.append(f"### Current User Prompt:\n{task_prompt}")
 
         return "\n\n".join(context_sections)

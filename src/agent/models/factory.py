@@ -28,9 +28,8 @@ class ModelFactory:
         elif provider == "openai":
             api_key = self.credentials.get_key_value("openai")
             if not api_key:
-                return MockChatModel(
-                    mock_response=f"[OpenAI fallback mock] {spec.model_name} response",
-                    model_name=spec.model_name,
+                raise RuntimeError(
+                    "OpenAI credentials are not configured. No real model call was performed."
                 )
             cred = OpenAICredential(api_key=api_key)
             return OpenAIChatModel(credential=cred, model=spec.model_name)
@@ -41,7 +40,6 @@ class ModelFactory:
             return OllamaChatModel(credential=cred, model=spec.model_name)
 
         else:
-            return MockChatModel(
-                mock_response=f"[{provider} mock] {spec.model_name} response",
-                model_name=spec.model_name,
+            raise RuntimeError(
+                f"Provider '{provider}' is not available. No real model call was performed."
             )

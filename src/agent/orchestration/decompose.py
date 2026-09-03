@@ -128,8 +128,19 @@ def ops_from_intent(intent, clause: str, workspace_dir: Optional[str]) -> List[O
         source = str(slots.get("source") or "")
         dest = str(slots.get("dest") or "summary.txt")
         ops.append(Op("read", "read_file-v1", {"relative_path": source}, f"Read {source}"))
-        write = Op("write", "write_file-v1", {"relative_path": dest, "content": ""}, f"Write {dest}")
-        write.bind["content"] = "prev"
+        explicit = ""
+        for name, content in extract_file_write_ops(clause):
+            if name == dest and str(content).strip():
+                explicit = str(content)
+                break
+        write = Op(
+            "write",
+            "write_file-v1",
+            {"relative_path": dest, "content": explicit},
+            f"Write {dest}",
+        )
+        if not explicit:
+            write.bind["content"] = "prev"
         ops.append(write)
     elif kind == READ_TEXT:
         rel = str(slots.get("filename") or clause.strip())

@@ -166,6 +166,32 @@ def test_local_model_readiness() -> None:
     assert status["provider"] == "ollama"
     assert status["host"] == "http://localhost:11434"
     assert status["configured"] is True
+    assert "reachable" in status
+    if not status["reachable"]:
+        assert status["status"] == "unreachable"
+
+
+def test_list_enabled_excludes_unavailable_models() -> None:
+    registry = ModelRegistry()
+    registry.register(ModelSpec(id="live", provider="mock", model_name="ok", priority=1))
+    registry.register(
+        ModelSpec(
+            id="dead",
+            provider="mock",
+            model_name="dead",
+            priority=2,
+            health_status=ModelHealthStatus.UNAVAILABLE,
+        )
+    )
+    enabled = [item.id for item in registry.list_enabled()]
+    assert enabled == ["live"]
+
+
+def test_factory_does_not_mock_missing_openai_credentials() -> None:
+    factory = ModelFactory(credentials=ProviderCredentials())
+    spec = ModelSpec(id="oa", provider="openai", model_name="gpt-4o-mini")
+    with pytest.raises(RuntimeError, match="not configured"):
+        factory.create_model(spec)
 
 @pytest.mark.asyncio
 async def test_adapter_layer2_integration() -> None:

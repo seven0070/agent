@@ -111,3 +111,13 @@ def test_compose_does_not_duplicate_simple_calc() -> None:
     kinds = [op.kind for op in ops]
     assert kinds.count("compute") == 1
     assert "write" not in kinds
+
+
+def test_read_then_write_keeps_explicit_destination_content() -> None:
+    completed, snapshot = _run(
+        "Read sum.txt and write a file named status.txt containing the text saved-42",
+        files=[("sum.txt", "42")],
+    )
+    assert snapshot.get("status.txt") == "saved-42"
+    assert snapshot.get("sum.txt") == "42"
+    assert completed.status == "completed"

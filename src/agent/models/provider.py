@@ -55,12 +55,33 @@ def load_provider_credentials() -> ProviderCredentials:
 
 def check_local_model_readiness(host: Optional[str] = None) -> Dict[str, Any]:
     """
-    Checks if local model endpoint (e.g. Ollama) is configured and reachable.
+    Probe a local model endpoint. Never reports reachable without a successful check.
     """
     target_host = host or os.getenv("OLLAMA_HOST", "http://localhost:11434")
+    configured = bool(target_host)
+    reachable = False
+    status = "unconfigured"
+    error = None
+    if configured:
+        status = "unreachable"
+        try:
+            import urllib.error
+            import urllib.request
+
+            url = target_host.rstrip("/") + "/api/tags"
+            req = urllib.request.Request(url, method="GET")
+            with urllib.request.urlopen(req, timeout=1.5) as resp:
+                reachable = 200 <= getattr(resp, "status", 200) < 300
+                status = "reachable" if reachable else "unreachable"
+        except Exception as exc:  # noqa: BLE001 — probe must fail closed
+            error = type(exc).__name__
+            reachable = False
+            status = "unreachable"
     return {
         "provider": "ollama",
         "host": target_host,
-        "configured": True,
-        "status": "ready_for_connection",
+        "configured": configured,
+        "reachable": reachable,
+        "status": status,
+        "error": error,
     }

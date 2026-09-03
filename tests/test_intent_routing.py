@@ -65,6 +65,18 @@ def test_intent_converse_and_unsupported() -> None:
     assert classify_intent("Email this report to the whole team.").kind == UNSUPPORTED
     assert classify_intent("Delete the note from my desktop.").kind == UNSUPPORTED
     assert classify_intent("Search the web for today's weather.").kind == UNSUPPORTED
+    assert classify_intent("Open a pull request on GitHub for this repository.").kind == UNSUPPORTED
+
+
+def test_open_external_action_is_not_read_when_workspace_has_files(tmp_path) -> None:
+    (tmp_path / "note.txt").write_text("keep", encoding="utf-8")
+    (tmp_path / "module.py").write_text("x = 1\n", encoding="utf-8")
+    intent = classify_intent(
+        "Open a pull request on GitHub for this repository.",
+        workspace_dir=str(tmp_path),
+    )
+    assert intent.kind == UNSUPPORTED
+    assert classify_intent("Use the OpenAI GPT model to write a haiku about sandboxes.").kind == UNSUPPORTED
 
 
 def test_existing_cued_goals_keep_previous_routing() -> None:

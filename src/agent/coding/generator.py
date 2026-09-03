@@ -5,59 +5,117 @@ from __future__ import annotations
 import ast
 import os
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from agent.coding.goal_spec import CodingGoalSpec, FunctionSpec
 
 _ASSERT_RE = re.compile(r"assert\s+([A-Za-z_][A-Za-z0-9_]*)\(([^)]*)\)\s*==\s*(.+)")
 
 
+def _fact(n: object) -> object:
+    if not isinstance(n, int) or n < 0 or n > 12:
+        raise ValueError("factorial domain")
+    result = 1
+    for item in range(2, n + 1):
+        result *= item
+    return result
+
+
+def _unary_templates() -> List[Tuple[str, str, Any]]:
+    return [
+        ("value", "return value", lambda n: n),
+        ("value", "return -value", lambda n: -n),
+        ("value", "return abs(value)", lambda n: abs(n)),
+        ("value", "return value + 1", lambda n: n + 1),
+        ("value", "return value - 1", lambda n: n - 1),
+        ("value", "return value * 2", lambda n: n * 2),
+        ("value", "return value * 3", lambda n: n * 3),
+        ("value", "return value * 4", lambda n: n * 4),
+        ("value", "return value * value", lambda n: n * n),
+        ("value", "return value * value * value", lambda n: n * n * n),
+        ("value", "return value ** 2", lambda n: n ** 2),
+        ("value", "return value ** 3", lambda n: n ** 3),
+        ("celsius", "return celsius * 9 / 5 + 32", lambda n: n * 9 / 5 + 32),
+        ("fahrenheit", "return (fahrenheit - 32) * 5 / 9", lambda n: (n - 32) * 5 / 9),
+        ("n", "return 1 if n <= 1 else n * factorial(n - 1)", _fact),
+    ]
+
+
+def _binary_templates() -> List[Tuple[str, str, Any]]:
+    return [
+        ("a, b", "return a + b", lambda a, b: a + b),
+        ("a, b", "return a - b", lambda a, b: a - b),
+        ("a, b", "return a * b", lambda a, b: a * b),
+        ("a, b", "return a / b", lambda a, b: a / b),
+        ("a, b", "return min(a, b)", lambda a, b: min(a, b)),
+        ("a, b", "return max(a, b)", lambda a, b: max(a, b)),
+        ("a, b", "return a ** b", lambda a, b: a ** b),
+    ]
+
+
+def _matches_all(fn: Any, rows: List[tuple]) -> bool:
+    for args, expected in rows:
+        try:
+            got = fn(*args)
+        except Exception:
+            return False
+        if got != expected:
+            return False
+    return True
+
+
 def _infer_body(args: tuple, expected: object) -> Optional[Tuple[str, str]]:
-    if len(args) == 2:
-        a, b = args
-        try:
-            if a + b == expected:
-                return "a, b", "return a + b"
-            if a - b == expected:
-                return "a, b", "return a - b"
-            if a * b == expected:
-                return "a, b", "return a * b"
-            if b and a / b == expected:
-                return "a, b", "return a / b"
-            if min(a, b) == expected:
-                return "a, b", "return min(a, b)"
-            if max(a, b) == expected:
-                return "a, b", "return max(a, b)"
-        except Exception:
-            return None
-    if len(args) == 1:
-        value = args[0]
-        try:
-            if value * 9 / 5 + 32 == expected:
-                return "celsius", "return celsius * 9 / 5 + 32"
-            if (value - 32) * 5 / 9 == expected:
-                return "fahrenheit", "return (fahrenheit - 32) * 5 / 9"
-        except Exception:
-            pass
-        if value == expected:
-            return "value", "return value"
-    if len(args) == 3:
-        value, lo, hi = args
-        try:
-            if max(lo, min(hi, value)) == expected:
-                return "value, lo, hi", "return max(lo, min(hi, value))"
-        except Exception:
-            return None
-    return None
+    inferred = _infer_body_from_cases([(args, expected)])
+    return inferred
+
+
+def _infer_body_from_cases(rows: List[tuple]) -> Optional[Tuple[str, str]]:
+    if not rows:
+        return None
+    arity = len(rows[0][0])
+    if any(len(args) != arity for args, _expected in rows):
+        return None
+    templates: List[Tuple[str, str, Any]]
+    if arity == 1:
+        templates = _unary_templates()
+    elif arity == 2:
+        templates = _binary_templates()
+    elif arity == 3:
+        templates = [
+            ("value, lo, hi", "return max(lo, min(hi, value))", lambda value, lo, hi: max(lo, min(hi, value))),
+        ]
+    else:
+        return None
+    matches = [(argspec, body) for argspec, body, fn in templates if _matches_all(fn, rows)]
+    if not matches:
+        return None
+    matches.sort(key=lambda item: len(item[1]))
+    return matches[0]
+
+
+def iter_python_files(workspace_dir: str) -> List[str]:
+    found: List[str] = []
+    for dirpath, dirnames, filenames in os.walk(workspace_dir):
+        dirnames[:] = [name for name in dirnames if name not in {".git", "__pycache__", ".venv", "node_modules"}]
+        for filename in filenames:
+            if filename.endswith(".py"):
+                found.append(os.path.join(dirpath, filename))
+    return found
+
+
+def _is_test_file(path: str) -> bool:
+    name = os.path.basename(path)
+    return name.startswith("test_") or name.endswith("_test.py")
 
 
 def infer_spec_from_workspace(workspace_dir: str) -> Optional[CodingGoalSpec]:
     """Rebuild implementations from existing pytest assertions (test-driven repair)."""
     cases: Dict[str, List[tuple]] = {}
-    for name in os.listdir(workspace_dir):
-        if not (name.startswith("test_") and name.endswith(".py")):
+    test_name = "test_module.py"
+    for path in iter_python_files(workspace_dir):
+        if not _is_test_file(path):
             continue
-        text = open(os.path.join(workspace_dir, name), encoding="utf-8").read()
+        text = open(path, encoding="utf-8").read()
         for match in _ASSERT_RE.finditer(text):
             func = match.group(1)
             try:
@@ -68,20 +126,12 @@ def infer_spec_from_workspace(workspace_dir: str) -> Optional[CodingGoalSpec]:
             except (ValueError, SyntaxError):
                 continue
             cases.setdefault(func, []).append((args, expected))
+            test_name = os.path.relpath(path, workspace_dir).replace("\\", "/")
     if not cases:
         return None
     functions: List[FunctionSpec] = []
     for func, rows in cases.items():
-        inferred = None
-        for args, expected in rows:
-            body = _infer_body(args, expected)
-            if body is None:
-                inferred = None
-                break
-            if inferred and inferred != body:
-                inferred = None
-                break
-            inferred = body
+        inferred = _infer_body_from_cases(rows)
         if inferred is None:
             continue
         argspec, body = inferred
@@ -89,13 +139,14 @@ def infer_spec_from_workspace(workspace_dir: str) -> Optional[CodingGoalSpec]:
     if not functions:
         return None
     module_name = "module.py"
-    for name in os.listdir(workspace_dir):
-        if name.endswith(".py") and not name.startswith("test_"):
-            text = open(os.path.join(workspace_dir, name), encoding="utf-8").read()
-            if any(f"def {fn.name}(" in text for fn in functions):
-                module_name = name
-                break
-    return CodingGoalSpec(functions=functions, module_name=module_name, test_name="test_module.py")
+    for path in iter_python_files(workspace_dir):
+        if _is_test_file(path):
+            continue
+        text = open(path, encoding="utf-8").read()
+        if any(re.search(rf"def {re.escape(fn.name)}\s*\(", text) for fn in functions):
+            module_name = os.path.relpath(path, workspace_dir).replace("\\", "/")
+            break
+    return CodingGoalSpec(functions=functions, module_name=module_name, test_name=test_name)
 
 
 def _format_arg(value: object) -> str:
@@ -203,4 +254,108 @@ def patch_existing_source_files(workspace_dir: str, goal: str) -> Optional[Dict[
             )
         if count:
             result[name] = new_text
+    return result or None
+
+
+def _rewrite_body_for_args(argspec: str, body: str) -> str:
+    names = [part.strip() for part in argspec.split(",") if part.strip()]
+    if len(names) == 1 and names[0] != "value" and "value" in body:
+        return re.sub(r"\bvalue\b", names[0], body)
+    return body
+
+
+def _replace_function_source(source: str, spec: FunctionSpec) -> Optional[str]:
+    pattern = re.compile(
+        rf"(^def {re.escape(spec.name)}\s*\()([^)]*)(\):)(.*?)(?=^def |\Z)",
+        flags=re.MULTILINE | re.DOTALL,
+    )
+    match = pattern.search(source)
+    if not match:
+        return None
+    existing_args = match.group(2).strip() or spec.args
+    body = _rewrite_body_for_args(existing_args, spec.body)
+    replacement = f"def {spec.name}({existing_args}):\n    {body}\n\n"
+    return source[: match.start()] + replacement + source[match.end() :]
+
+
+def apply_function_patches(workspace_dir: str, spec: CodingGoalSpec) -> Dict[str, str]:
+    """Patch existing function bodies in-place; create a module only when missing."""
+    result: Dict[str, str] = {}
+    remaining = list(spec.functions)
+    for path in iter_python_files(workspace_dir):
+        if _is_test_file(path):
+            continue
+        text = open(path, encoding="utf-8").read()
+        updated = text
+        kept: List[FunctionSpec] = []
+        changed = False
+        for fn in remaining:
+            patched = _replace_function_source(updated, fn)
+            if patched is None:
+                kept.append(fn)
+                continue
+            updated = patched
+            changed = True
+        remaining = kept
+        if changed:
+            rel = os.path.relpath(path, workspace_dir).replace("\\", "/")
+            result[rel] = updated
+    if remaining:
+        fallback = spec.module_name or "module.py"
+        abs_fallback = os.path.join(workspace_dir, fallback)
+        base = result.get(fallback)
+        if base is None and os.path.isfile(abs_fallback):
+            base = open(abs_fallback, encoding="utf-8").read()
+        if base is None:
+            result[fallback] = generate_module_source(CodingGoalSpec(functions=remaining, module_name=fallback))
+        else:
+            extra = generate_module_source(CodingGoalSpec(functions=remaining, module_name=fallback))
+            result[fallback] = base.rstrip() + "\n\n" + extra
+    return result
+
+
+def _assignment_value_for_label(goal: str, label: str) -> str:
+    escaped = re.escape(label)
+    patterns = (
+        rf"{escaped}\s+to\s+[\"']([^\"']+)[\"']",
+        rf"{escaped}\s+to\s+(.+?)(?=\s+and\s+the\s+[A-Za-z_]|\s+and\s+[A-Za-z_][A-Za-z0-9_]*\s+to\b|$)",
+        rf"{escaped}\s+should say\s+[\"']([^\"']+)[\"']",
+        rf"{escaped}\s+should say\s+(.+?)(?:\.(?:\s|$)|$)",
+        rf"{escaped}\s+now reads\s+[\"']([^\"']+)[\"']",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, goal, flags=re.IGNORECASE | re.DOTALL)
+        if match:
+            text = match.group(1).strip()
+            text = re.split(r"\b(?:verify|then|report)\b", text, maxsplit=1, flags=re.IGNORECASE)[0]
+            return text.strip(" \t\r\n.,;:")
+    return ""
+
+
+def patch_identifier_assignments(workspace_dir: str, goal: str) -> Optional[Dict[str, str]]:
+    """Update NAME = '...' assignments whose identifiers are mentioned in the goal."""
+    assign_re = re.compile(
+        r'(?P<pre>^\s*(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*)(?P<q>["\'])(?P<val>.*?)(?P=q)',
+        flags=re.MULTILINE,
+    )
+    result: Dict[str, str] = {}
+    for path in iter_python_files(workspace_dir):
+        if _is_test_file(path):
+            continue
+        text = open(path, encoding="utf-8").read()
+
+        def _sub(match: re.Match[str]) -> str:
+            name = match.group("name")
+            label = name.lower().strip("_").replace("_", " ")
+            if label not in goal.lower() and name.lower() not in goal.lower():
+                return match.group(0)
+            value = _assignment_value_for_label(goal, label) or _assignment_value_for_label(goal, name.lower())
+            if not value:
+                return match.group(0)
+            return f"{match.group('pre')}{match.group('q')}{value}{match.group('q')}"
+
+        new_text = assign_re.sub(_sub, text)
+        if new_text != text:
+            rel = os.path.relpath(path, workspace_dir).replace("\\", "/")
+            result[rel] = new_text
     return result or None
