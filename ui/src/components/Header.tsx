@@ -18,7 +18,16 @@ export const Header: React.FC = () => {
         {health.connection === "online" && health.generation ? (
           <span className="mono subtle">{health.generation}</span>
         ) : null}
-        <StatusIndicator state={health.connection} />
+        <StatusIndicator
+          state={health.connection}
+          label={
+            health.connection === "online"
+              ? "Backend Online"
+              : health.connection === "offline"
+                ? "Backend Disconnected"
+                : "Connecting"
+          }
+        />
       </div>
     </header>
   );

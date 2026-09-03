@@ -1,7 +1,7 @@
 import React from "react";
 import { sectionHref, type SectionId } from "../lib/navigation";
 
-export const NavItem: React.FC<{
+export const NavigationItem: React.FC<{
   id: SectionId;
   label: string;
   active: boolean;
