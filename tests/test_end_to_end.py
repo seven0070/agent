@@ -78,6 +78,51 @@ def test_user_goal_coding_path_invokes_jcode():
     assert "coding-engine-v1" in body or "JCODE_COMPLETED" in body
 
 
+def _workspace_py_and_txt() -> list[str]:
+    root = os.path.join(os.environ["AGENT_DATA_DIR"], "workspace")
+    found: list[str] = []
+    if not os.path.isdir(root):
+        return found
+    for dirpath, _, files in os.walk(root):
+        for name in files:
+            found.append(os.path.join(dirpath, name))
+    return found
+
+
+def test_user_goal_file_create_writes_requested_workspace_file():
+    sess = client.post("/api/sessions", json={"title": "E2E File"}).json()
+    sid = sess["session_id"]
+    prompt = "Create a file named notes-alpha.txt containing the text WorkspaceProbe. Verify that the file exists and report the result."
+    with client.stream("POST", "/api/chat/stream", json={"session_id": sid, "prompt": prompt}) as response:
+        assert response.status_code == 200
+        body = "\n".join(response.iter_lines())
+    assert "write_file-v1" in body
+    assert "Mocked AgentScope response content" not in body
+    matches = [path for path in _workspace_py_and_txt() if path.endswith("notes-alpha.txt")]
+    assert matches, f"expected notes-alpha.txt under workspace, found {_workspace_py_and_txt()}"
+    content = open(matches[-1], encoding="utf-8").read()
+    assert content == "WorkspaceProbe"
+
+
+def test_user_goal_coding_path_implements_requested_operations():
+    sess = client.post("/api/sessions", json={"title": "E2E Four Ops"}).json()
+    sid = sess["session_id"]
+    prompt = "Create a small Python calculator with add, subtract, multiply and divide functions. Create tests, run the tests, and report the result."
+    with client.stream("POST", "/api/chat/stream", json={"session_id": sid, "prompt": prompt}) as response:
+        assert response.status_code == 200
+        body = "\n".join(response.iter_lines())
+    assert "coding-engine-v1" in body
+    assert "TASK_FAILED" not in body or "MESSAGE_COMPLETED" in body
+    modules = [
+        path
+        for path in _workspace_py_and_txt()
+        if os.path.basename(path) == "module.py"
+    ]
+    assert modules, f"expected generated module.py, found {_workspace_py_and_txt()}"
+    sources = [open(path, encoding="utf-8").read() for path in modules]
+    assert any(all(f"def {name}(" in source for name in ("add", "subtract", "multiply", "divide")) for source in sources)
+
+
 @pytest.mark.asyncio
 async def test_full_evolution_promote_and_rollback_lineage():
     with tempfile.TemporaryDirectory() as tmpdir:

@@ -37,6 +37,27 @@ def test_planner_goal_decomposition() -> None:
     assert "task_write_2" in plan.tasks
     assert plan.tasks["task_write_2"].dependencies == ["task_calc_1"]
 
+
+def test_planner_file_create_uses_write_tool_not_model_path() -> None:
+    """Ordinary file-create goals must route through write_file-v1, not the mock model."""
+    from agent.orchestration.planner import extract_file_content, extract_filename
+
+    planner = RuleBasedPlanner()
+    plan = planner.create_plan(
+        "Create a file named notes-alpha.txt containing the text WorkspaceProbe. Verify that the file exists."
+    )
+    assert "task_write_1" in plan.tasks
+    task = plan.tasks["task_write_1"]
+    assert task.required_tool_id == "write_file-v1"
+    assert task.inputs["relative_path"] == "notes-alpha.txt"
+    assert task.inputs["content"] == "WorkspaceProbe"
+
+    other = planner.create_plan('Write a file called report.md containing "status ok"')
+    assert other.tasks["task_write_1"].inputs["relative_path"] == "report.md"
+    assert other.tasks["task_write_1"].inputs["content"] == "status ok"
+    assert extract_filename("Create a file named ledger.csv containing totals") == "ledger.csv"
+    assert extract_file_content("Create a file named ledger.csv containing totals") == "totals"
+
 def test_dag_cycle_detection() -> None:
     """Tests DAG cycle detection in PlanOrchestrator."""
     orchestrator = PlanOrchestrator()
@@ -65,8 +86,9 @@ def test_dependency_execution_ordering() -> None:
         assert completed_plan.status == "completed"
         assert completed_plan.tasks["task_calc_1"].status == TaskState.SUCCEEDED
         assert completed_plan.tasks["task_write_2"].status == TaskState.SUCCEEDED
+        assert completed_plan.tasks["task_write_2"].inputs["relative_path"] == "sum.txt"
 
-        content = broker.workspace_manager.read_file("calc_result.txt")
+        content = broker.workspace_manager.read_file("sum.txt")
         assert content in ["30", "30.0"]
 
 def test_task_failure_and_retry_recovery() -> None:

@@ -71,11 +71,14 @@ class JcodeAdapter(CodingEngineInterface):
         try:
             workspace_root = self.workspace_restrictor.workspace_dir
             explicit_files: Dict[str, str] = (task.metadata or {}).get("files") or {}
+            generated_test = None
 
             if explicit_files:
                 for rel_path, content in explicit_files.items():
                     abs_path = self.workspace_restrictor.validate_and_resolve(rel_path)
-                    os.makedirs(os.path.dirname(abs_path) or workspace_root, exist_ok=True)
+                    parent = os.path.dirname(abs_path)
+                    if parent:
+                        os.makedirs(parent, exist_ok=True)
                     with open(abs_path, "w", encoding="utf-8") as handle:
                         handle.write(content)
                     files_changed.append(rel_path.replace("\\", "/"))
@@ -92,19 +95,35 @@ class JcodeAdapter(CodingEngineInterface):
                         "files_to_create": files_changed,
                     }
                 )
-            elif "python module" in task.goal.lower() or "create" in task.goal.lower() or "file" in task.goal.lower() or "code" in task.goal.lower():
-                mod_path = self.workspace_restrictor.validate_and_resolve("math_module.py")
-                test_path = self.workspace_restrictor.validate_and_resolve("test_math_module.py")
+            else:
+                from agent.coding.generator import generate_workspace_files
+                from agent.coding.goal_spec import parse_coding_goal
 
-                with open(mod_path, "w", encoding="utf-8") as f:
-                    f.write("def add_numbers(a, b):\n    return a + b\n")
-                files_changed.append("math_module.py")
-                self._emit_event("tool_executed", session_id, task.task_id, {"action": "create_file", "file": "math_module.py"})
-
-                with open(test_path, "w", encoding="utf-8") as f:
-                    f.write("from math_module import add_numbers\n\ndef test_add():\n    assert add_numbers(10, 20) == 30\n")
-                files_changed.append("test_math_module.py")
-                self._emit_event("tool_executed", session_id, task.task_id, {"action": "create_file", "file": "test_math_module.py"})
+                spec = parse_coding_goal(task.goal)
+                generated = generate_workspace_files(spec)
+                generated_test = spec.test_name
+                for rel_path, content in generated.items():
+                    abs_path = self.workspace_restrictor.validate_and_resolve(rel_path)
+                    parent = os.path.dirname(abs_path)
+                    if parent:
+                        os.makedirs(parent, exist_ok=True)
+                    with open(abs_path, "w", encoding="utf-8") as handle:
+                        handle.write(content)
+                    files_changed.append(rel_path.replace("\\", "/"))
+                    self._emit_event(
+                        "tool_executed",
+                        session_id,
+                        task.task_id,
+                        {"action": "create_file", "file": rel_path},
+                    )
+                self.bridge.execute_bridge_session(
+                    {
+                        "task_id": task.task_id,
+                        "workspace_dir": workspace_root,
+                        "files_to_create": files_changed,
+                        "goal": task.goal,
+                    }
+                )
 
             tests_run = 0
             tests_passed = 0
@@ -114,9 +133,9 @@ class JcodeAdapter(CodingEngineInterface):
                 self._emit_event("tool_started", session_id, task.task_id, {"action": "run_tests", "command": task.test_command})
                 from agent.runtime.pytest_runner import run_workspace_tests
 
-                test_file = None
-                if os.path.isfile(os.path.join(workspace_root, "test_math_module.py")):
-                    test_file = "test_math_module.py"
+                test_file = generated_test
+                if test_file and not os.path.isfile(os.path.join(workspace_root, test_file)):
+                    test_file = None
                 proc = run_workspace_tests(workspace_root, test_target=test_file)
                 tests_run = 1
                 if proc.get("success"):

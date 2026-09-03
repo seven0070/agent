@@ -111,3 +111,52 @@ def test_orchestrator_coding_goal_integration() -> None:
 
         assert completed_plan.status == "completed"
         assert completed_plan.tasks["task_code_1"].status == TaskState.SUCCEEDED
+
+
+def test_jcode_implements_requested_functions_not_a_fixed_stub() -> None:
+    """Jcode must implement the functions named in the goal, not a hardcoded add_numbers stub."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        adapter = JcodeAdapter(workspace_dir=tmp_dir)
+        task = CodingTask(
+            task_id="ct-ops-1",
+            goal="Create python functions scale and offset with tests",
+            workspace_dir=tmp_dir,
+            test_command="pytest",
+        )
+        result = adapter.execute_coding_task(task)
+        assert result.status == "success"
+        module_path = os.path.join(tmp_dir, "module.py")
+        test_path = os.path.join(tmp_dir, "test_module.py")
+        assert os.path.isfile(module_path)
+        assert os.path.isfile(test_path)
+        source = open(module_path, encoding="utf-8").read()
+        assert "def scale(" in source
+        assert "def offset(" in source
+        assert "def add_numbers(" not in source
+        assert result.tests_run >= 1
+        assert result.tests_passed >= 1
+        assert result.tests_failed == 0
+
+
+def test_jcode_implements_listed_arithmetic_operations() -> None:
+    """A listed set of arithmetic operations must all be generated and tested."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        adapter = JcodeAdapter(workspace_dir=tmp_dir)
+        task = CodingTask(
+            task_id="ct-ops-2",
+            goal="Implement python with add, subtract, multiply and divide functions. Create tests and run them.",
+            workspace_dir=tmp_dir,
+            test_command="pytest",
+        )
+        result = adapter.execute_coding_task(task)
+        assert result.status == "success"
+        source = open(os.path.join(tmp_dir, "module.py"), encoding="utf-8").read()
+        for name in ("add", "subtract", "multiply", "divide"):
+            assert f"def {name}(" in source
+        tests = open(os.path.join(tmp_dir, "test_module.py"), encoding="utf-8").read()
+        for name in ("add", "subtract", "multiply", "divide"):
+            assert f"test_{name}_" in tests
+        assert result.status == "success"
+        assert result.tests_failed == 0
+        assert result.tests_run >= 1
+        assert tests.count("def test_") >= 4
