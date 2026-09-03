@@ -1,14 +1,30 @@
 import React, { useEffect, useState } from "react";
 import { json } from "../lib/api";
-import { EmptyState, ErrorState, LoadingState, StatusBadge, UnavailableState } from "../components/ui";
+import {
+  DataTable,
+  EmptyState,
+  IssueBanner,
+  LoadingState,
+  OfflineState,
+  PageHeader,
+  StatusBadge,
+  UnavailableState,
+} from "../components/ui";
+import { useHealth } from "../state/HealthContext";
 import type { ToolRecord } from "../lib/types";
 
 export const ToolsPage: React.FC = () => {
+  const { health } = useHealth();
   const [tools, setTools] = useState<ToolRecord[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const online = health.connection === "online";
 
   useEffect(() => {
+    if (!online) {
+      setLoading(false);
+      return;
+    }
     const load = async () => {
       try {
         setTools(await json<ToolRecord[]>("/api/tools"));
@@ -21,29 +37,32 @@ export const ToolsPage: React.FC = () => {
       }
     };
     void load();
-  }, []);
+  }, [online]);
 
   return (
     <section className="page">
-      <p className="eyebrow">Capabilities</p>
-      <h1>Tools</h1>
-      <p className="muted">Registered tools and their Capability Broker permissions. Permissions cannot be raised from this UI.</p>
+      <PageHeader eyebrow="Capabilities" title="Tools">
+        Registered tools and their Capability Broker permissions. Permissions cannot be raised from this UI.
+      </PageHeader>
+      {!online ? <OfflineState /> : null}
       {loading ? <LoadingState /> : null}
-      {error ? <ErrorState>{error}</ErrorState> : null}
-      {tools && tools.length === 0 ? <EmptyState>No tools registered.</EmptyState> : null}
-      {tools && tools.length > 0 ? (
-        <ul className="plain-list">
-          {tools.map((tool) => (
-            <li key={tool.tool_id} className="panel">
-              <div className="row-between">
-                <strong className="mono">{tool.tool_id}</strong>
-                <StatusBadge value={tool.permission} />
-              </div>
-              <div className="muted">{tool.description}</div>
-              <div className="mono subtle">risk {tool.risk_level}</div>
-            </li>
-          ))}
-        </ul>
+      <IssueBanner message={error} />
+      {tools ? (
+        <DataTable
+          columns={[
+            { key: "id", label: "Tool", mono: true },
+            { key: "permission", label: "Permission" },
+            { key: "risk", label: "Risk" },
+            { key: "description", label: "Description" },
+          ]}
+          rows={tools.map((tool) => ({
+            id: tool.tool_id,
+            permission: <StatusBadge value={tool.permission} />,
+            risk: tool.risk_level,
+            description: tool.description,
+          }))}
+          empty={<EmptyState title="No tools registered">The broker returned an empty registry.</EmptyState>}
+        />
       ) : null}
       <UnavailableState title="MCP / skills listing NOT EXPOSED">
         MCP client wrappers exist in the backend, but there is no HTTP endpoint that lists connected MCP servers or

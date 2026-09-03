@@ -1,15 +1,32 @@
 import React, { useEffect, useState } from "react";
 import { json } from "../lib/api";
-import { EmptyState, ErrorState, LoadingState, StatusBadge } from "../components/ui";
+import {
+  DataTable,
+  EmptyState,
+  IssueBanner,
+  LoadingState,
+  OfflineState,
+  PageHeader,
+  StatusBadge,
+} from "../components/ui";
+import { formatTime } from "../lib/format";
+import { useHealth } from "../state/HealthContext";
 import type { AuditEvent, ConstitutionStatus, RuntimeSettings } from "../lib/types";
 
 export const SecurityPage: React.FC = () => {
+  const { health } = useHealth();
   const [constitution, setConstitution] = useState<ConstitutionStatus | null>(null);
   const [settings, setSettings] = useState<RuntimeSettings | null>(null);
   const [audit, setAudit] = useState<AuditEvent[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const online = health.connection === "online";
 
   useEffect(() => {
+    if (!online) {
+      setLoading(false);
+      return;
+    }
     const load = async () => {
       try {
         const [trust, conf, logs] = await Promise.all([
@@ -23,22 +40,32 @@ export const SecurityPage: React.FC = () => {
         setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Security APIs unavailable");
+      } finally {
+        setLoading(false);
       }
     };
     void load();
-  }, []);
+  }, [online]);
 
   return (
     <section className="page">
-      <p className="eyebrow">Governance</p>
-      <h1>Security</h1>
-      <p className="muted">Constitution, broker permissions, and audit events. Secrets are not requested or displayed.</p>
-      {error ? <ErrorState>{error}</ErrorState> : null}
-      {!constitution && !error ? <LoadingState /> : null}
+      <PageHeader eyebrow="Governance" title="Security">
+        Constitution, broker permissions, and audit events. Secrets are not requested or displayed.
+      </PageHeader>
+      {!online ? <OfflineState /> : null}
+      <IssueBanner message={error} />
+      {loading ? <LoadingState /> : null}
       {constitution ? (
         <article className="panel">
-          <h2>Constitution</h2>
-          <StatusBadge value={constitution.protected ? "protected" : "unconfirmed"} />
+          <div className="row-between">
+            <h2>Constitution</h2>
+            <StatusBadge value={constitution.protected ? "protected" : "unconfirmed"} />
+          </div>
+          <p className="muted">
+            {constitution.protected
+              ? "Protected boundaries are enforced. This UI cannot raise permissions or mutate constitution targets."
+              : "Constitution status was not confirmed by the trust endpoint."}
+          </p>
           <h2>Boundaries</h2>
           <ul className="plain-list">
             {constitution.protected_boundaries.map((item) => (
@@ -49,7 +76,7 @@ export const SecurityPage: React.FC = () => {
           </ul>
           <h2>Invariants</h2>
           {constitution.invariants.map((item) => (
-            <div key={item.name}>
+            <div key={item.name} className="task-card">
               <strong>{item.name}</strong>
               <div className="muted">{item.description}</div>
             </div>
@@ -71,20 +98,22 @@ export const SecurityPage: React.FC = () => {
       ) : null}
       <article className="panel">
         <h2>Audit</h2>
-        {!audit || audit.length === 0 ? (
-          <EmptyState>No audit events.</EmptyState>
-        ) : (
-          <ul className="plain-list">
-            {audit.map((event, index) => (
-              <li key={`${event.timestamp}-${index}`}>
-                <div className="mono subtle">{event.timestamp}</div>
-                <div>
-                  {event.event_type} · {event.action ?? ""} · {event.result ?? ""}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+        <DataTable
+          columns={[
+            { key: "time", label: "Time", mono: true },
+            { key: "type", label: "Event" },
+            { key: "action", label: "Action" },
+            { key: "result", label: "Result" },
+          ]}
+          rows={(audit ?? []).map((event, index) => ({
+            id: `${event.timestamp}-${index}`,
+            time: formatTime(event.timestamp) || event.timestamp,
+            type: event.event_type,
+            action: event.action ?? "—",
+            result: <StatusBadge value={event.result ?? "recorded"} />,
+          }))}
+          empty={<EmptyState title="No audit events">The audit log is empty.</EmptyState>}
+        />
       </article>
     </section>
   );

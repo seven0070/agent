@@ -1,6 +1,16 @@
 import React, { useEffect, useState } from "react";
 import { json } from "../lib/api";
-import { EmptyState, ErrorState, LoadingState, StatusBadge, Timeline } from "../components/ui";
+import {
+  EmptyState,
+  FileTree,
+  IssueBanner,
+  LoadingState,
+  OfflineState,
+  PageHeader,
+  StatusBadge,
+  Timeline,
+} from "../components/ui";
+import { summarizePayload } from "../lib/format";
 import { useHealth } from "../state/HealthContext";
 import { useSession } from "../state/SessionContext";
 import type { CodingWorkspace, WorkspaceListing } from "../lib/types";
@@ -12,36 +22,46 @@ export const JcodePage: React.FC = () => {
   const [coding, setCoding] = useState<CodingWorkspace | null>(null);
   const [files, setFiles] = useState<WorkspaceListing | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const online = health.connection === "online";
 
   const load = async () => {
+    setLoading(true);
     try {
-      setCoding(await json<CodingWorkspace>("/api/coding/workspace"));
-      setFiles(await json<WorkspaceListing>("/api/workspace/files"));
+      const [codingWs, listing] = await Promise.all([
+        json<CodingWorkspace>("/api/coding/workspace"),
+        json<WorkspaceListing>("/api/workspace/files"),
+      ]);
+      setCoding(codingWs);
+      setFiles(listing);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Jcode status unavailable");
+    } finally {
+      setLoading(false);
     }
   };
 
   useEffect(() => {
+    if (!online) {
+      setLoading(false);
+      return;
+    }
     void load();
-    void session.refresh();
-  }, [session.refresh]);
+  }, [online, session.workspaceEpoch]);
 
-  const online = health.connection === "online";
-  const codingEvents = session.events.filter((event) =>
-    /jcode|coding|tool/i.test(event.event_type),
-  );
+  const codingEvents = session.events.filter((event) => /jcode|coding|tool/i.test(event.event_type));
+  const test = coding?.last_test_run;
+  const testTone = test?.failed ? "failed" : test?.status ?? "idle";
 
   return (
-    <section className="page page--wide">
-      <p className="eyebrow">Coding engine</p>
-      <h1>Jcode</h1>
-      <p className="muted">
+    <section className="page page--wide page--fill">
+      <PageHeader eyebrow="Coding engine" title="Jcode">
         Jcode runs as `coding-engine-v1` through the existing chat pipeline. There is no separate IDE backend.
-      </p>
-      {error ? <ErrorState>{error}</ErrorState> : null}
-      <div className="split">
+      </PageHeader>
+      {!online ? <OfflineState /> : null}
+      <IssueBanner message={error} />
+      <div className="split page--fill">
         <div className="stack">
           <article className="panel">
             <h2>Request</h2>
@@ -51,7 +71,7 @@ export const JcodePage: React.FC = () => {
                 event.preventDefault();
                 const text = draft;
                 setDraft("");
-                void session.sendPrompt(text).then(() => void load());
+                void session.sendPrompt(text);
               }}
             >
               <textarea
@@ -60,20 +80,24 @@ export const JcodePage: React.FC = () => {
                 value={draft}
                 disabled={!online || session.busy}
                 placeholder="Describe a coding outcome…"
+                aria-label="Coding goal"
                 onChange={(event) => setDraft(event.target.value)}
               />
-              <button className="btn" type="submit" disabled={!online || session.busy || !draft.trim()}>
-                {session.busy ? "Running" : "Run through pipeline"}
+              <button className="btn btn--primary" type="submit" disabled={!online || session.busy || !draft.trim()}>
+                {session.busy ? session.streamHint ?? "Running" : "Run through pipeline"}
               </button>
             </form>
           </article>
           <article className="panel">
             <h2>Last coding workspace status</h2>
+            {loading && !coding ? <LoadingState /> : null}
             {coding ? (
               <dl className="meta-list">
                 <div>
                   <dt>Status</dt>
-                  <dd>{coding.status}</dd>
+                  <dd>
+                    <StatusBadge value={coding.status} />
+                  </dd>
                 </div>
                 <div>
                   <dt>Active task</dt>
@@ -86,38 +110,32 @@ export const JcodePage: React.FC = () => {
                 <div>
                   <dt>Last test run</dt>
                   <dd>
-                    {coding.last_test_run.status} · passed {coding.last_test_run.passed} · failed{" "}
-                    {coding.last_test_run.failed}
+                    <StatusBadge value={testTone} /> passed {test?.passed ?? 0} · failed {test?.failed ?? 0}
                   </dd>
                 </div>
               </dl>
-            ) : (
-              <LoadingState />
-            )}
+            ) : null}
             {coding && coding.changed_files.length > 0 ? (
-              <ul className="plain-list">
-                {coding.changed_files.map((file) => (
-                  <li key={file} className="mono">
-                    {file}
-                  </li>
-                ))}
-              </ul>
+              <>
+                <h2>Changed files</h2>
+                <ul className="plain-list">
+                  {coding.changed_files.map((file) => (
+                    <li key={file} className="mono">
+                      {file}
+                    </li>
+                  ))}
+                </ul>
+              </>
             ) : null}
           </article>
         </div>
         <div className="stack">
-          <article className="panel">
+          <article className="panel panel--fill">
             <h2>Workspace files</h2>
             {!files || files.files.length === 0 ? (
-              <EmptyState>No sandbox files yet.</EmptyState>
+              <EmptyState title="No sandbox files yet">Generated programs land in the governed workspace.</EmptyState>
             ) : (
-              <ul className="plain-list">
-                {files.files.map((file) => (
-                  <li key={file.id} className="mono">
-                    {file.path}
-                  </li>
-                ))}
-              </ul>
+              <FileTree files={files.files} />
             )}
           </article>
           <article className="panel">
@@ -127,7 +145,9 @@ export const JcodePage: React.FC = () => {
               items={codingEvents.map((event, index) => ({
                 id: `${event.event_type}-${index}`,
                 title: event.event_type,
+                detail: summarizePayload(event.payload),
                 time: event.timestamp,
+                status: event.event_type,
               }))}
             />
           </article>

@@ -1,10 +1,15 @@
 import React, { useEffect, useState } from "react";
 import { json, postJson } from "../lib/api";
-import { ErrorState, LoadingState, StatusBadge } from "../components/ui";
+import { IssueBanner, LoadingState, MetricList, OfflineState, PageHeader, StatusBadge } from "../components/ui";
 import { useHealth } from "../state/HealthContext";
 import type { RuntimeSettings } from "../lib/types";
 
-const EDITABLE = ["model_provider", "model_name", "local_model_host", "runtime_timeout_seconds"] as const;
+const EDITABLE: Array<{ key: "model_provider" | "model_name" | "local_model_host" | "runtime_timeout_seconds"; label: string }> = [
+  { key: "model_provider", label: "Model provider" },
+  { key: "model_name", label: "Model name" },
+  { key: "local_model_host", label: "Local model host" },
+  { key: "runtime_timeout_seconds", label: "Runtime timeout (seconds)" },
+];
 
 export const SettingsPage: React.FC = () => {
   const { health, refresh } = useHealth();
@@ -14,6 +19,7 @@ export const SettingsPage: React.FC = () => {
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const online = health.connection === "online";
 
   const load = async () => {
     setLoading(true);
@@ -36,8 +42,12 @@ export const SettingsPage: React.FC = () => {
   };
 
   useEffect(() => {
+    if (!online) {
+      setLoading(false);
+      return;
+    }
     void load();
-  }, []);
+  }, [online]);
 
   const save = async () => {
     setSaving(true);
@@ -62,53 +72,44 @@ export const SettingsPage: React.FC = () => {
 
   return (
     <section className="page">
-      <p className="eyebrow">System</p>
-      <h1>Settings</h1>
-      <p className="muted">Only keys accepted by `/api/settings` can be written. Protected boundaries return 403.</p>
+      <PageHeader eyebrow="System" title="Settings">
+        Only keys accepted by `/api/settings` can be written. Protected boundaries return 403.
+      </PageHeader>
+      {!online ? <OfflineState /> : null}
       {loading ? <LoadingState /> : null}
-      {error ? <ErrorState>{error}</ErrorState> : null}
-      {notice ? <div className="banner">{notice}</div> : null}
+      <IssueBanner message={error} />
+      {notice ? <div className="banner banner--ok" role="status">{notice}</div> : null}
       {settings ? (
         <div className="stack">
           <article className="panel">
             <h2>Health</h2>
-            <dl className="meta-list">
-              <div>
-                <dt>Connection</dt>
-                <dd>{health.connection}</dd>
-              </div>
-              <div>
-                <dt>Version</dt>
-                <dd>{health.version ?? settings.agent_version ?? "unavailable"}</dd>
-              </div>
-              <div>
-                <dt>Data directory</dt>
-                <dd>{settings.data_dir ?? "unavailable"}</dd>
-              </div>
-              <div>
-                <dt>Evolution mode</dt>
-                <dd>{settings.evolution_mode ?? "unavailable"}</dd>
-              </div>
-              <div>
-                <dt>Constitution</dt>
-                <dd>
-                  <StatusBadge value={settings.constitution_locked ? "locked" : "unconfirmed"} />
-                </dd>
-              </div>
-            </dl>
+            <MetricList
+              items={[
+                { label: "Connection", value: health.connection },
+                { label: "Version", value: health.version ?? settings.agent_version ?? "unavailable" },
+                { label: "Data directory", value: settings.data_dir ?? "unavailable" },
+                { label: "Evolution mode", value: settings.evolution_mode ?? "unavailable" },
+                {
+                  label: "Constitution",
+                  value: <StatusBadge value={settings.constitution_locked ? "locked" : "unconfirmed"} />,
+                },
+              ]}
+            />
           </article>
           <article className="panel">
-            <h2>Editable</h2>
-            {EDITABLE.map((key) => (
-              <label key={key} className="field">
-                <span>{key}</span>
+            <h2>Model routing</h2>
+            {EDITABLE.map((field) => (
+              <label key={field.key} className="field">
+                <span>{field.label}</span>
                 <input
-                  value={draft[key] ?? ""}
-                  onChange={(event) => setDraft((prev) => ({ ...prev, [key]: event.target.value }))}
+                  value={draft[field.key] ?? ""}
+                  aria-label={field.label}
+                  disabled={!online || saving}
+                  onChange={(event) => setDraft((prev) => ({ ...prev, [field.key]: event.target.value }))}
                 />
               </label>
             ))}
-            <button className="btn" disabled={saving || health.connection !== "online"} onClick={() => void save()}>
+            <button className="btn btn--primary" disabled={saving || !online} onClick={() => void save()}>
               {saving ? "Saving…" : "Save"}
             </button>
           </article>

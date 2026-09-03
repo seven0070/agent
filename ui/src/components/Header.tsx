@@ -15,6 +15,9 @@ export const Header: React.FC = () => {
         <span className="app-header__section">{sectionLabel(section)}</span>
       </div>
       <div className="app-header__status">
+        {health.connection === "online" && health.constitutionActive === true ? (
+          <span className="badge badge--ok">constitution</span>
+        ) : null}
         {health.connection === "online" && health.generation ? (
           <span className="mono subtle">{health.generation}</span>
         ) : null}

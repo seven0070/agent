@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { json } from "../lib/api";
 import { INITIAL_HEALTH, type HealthSnapshot } from "../lib/health";
 
@@ -11,16 +11,23 @@ const HealthContext = createContext<HealthContextValue | null>(null);
 
 export const HealthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [health, setHealth] = useState<HealthSnapshot>(INITIAL_HEALTH);
+  const constitutionTick = useRef(0);
+  const constitutionKnown = useRef<boolean | null>(null);
 
   const refresh = useCallback(async () => {
     try {
       const payload = await json<Record<string, unknown>>("/health");
-      let constitutionActive: boolean | null = null;
-      try {
-        const trust = await json<Record<string, unknown>>("/api/trust/constitution");
-        constitutionActive = trust.protected === true;
-      } catch {
-        constitutionActive = null;
+      constitutionTick.current += 1;
+      let constitutionActive = constitutionKnown.current;
+      if (constitutionTick.current === 1 || constitutionTick.current % 4 === 0 || constitutionActive == null) {
+        try {
+          const trust = await json<Record<string, unknown>>("/api/trust/constitution");
+          constitutionActive = trust.protected === true;
+          constitutionKnown.current = constitutionActive;
+        } catch {
+          constitutionActive = null;
+          constitutionKnown.current = null;
+        }
       }
       setHealth({
         connection: "online",
@@ -32,6 +39,7 @@ export const HealthProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         fetchedAt: typeof payload.timestamp === "string" ? payload.timestamp : new Date().toISOString(),
       });
     } catch (err) {
+      constitutionKnown.current = null;
       setHealth((prev) => ({
         ...prev,
         connection: "offline",
@@ -45,7 +53,7 @@ export const HealthProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   useEffect(() => {
     void refresh();
-    const id = window.setInterval(() => void refresh(), 8000);
+    const id = window.setInterval(() => void refresh(), 12000);
     return () => window.clearInterval(id);
   }, [refresh]);
 

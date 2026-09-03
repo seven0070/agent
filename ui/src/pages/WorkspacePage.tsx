@@ -1,12 +1,18 @@
 import React, { useEffect, useState } from "react";
 import { json } from "../lib/api";
-import { EmptyState, ErrorState, LoadingState } from "../components/ui";
+import { EmptyState, IssueBanner, LoadingState, OfflineState, PageHeader } from "../components/ui";
+import { formatBytes } from "../lib/format";
+import { useHealth } from "../state/HealthContext";
+import { useSession } from "../state/SessionContext";
 import type { WorkspaceListing } from "../lib/types";
 
 export const WorkspacePage: React.FC = () => {
+  const { health } = useHealth();
+  const { workspaceEpoch } = useSession();
   const [data, setData] = useState<WorkspaceListing | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const online = health.connection === "online";
 
   const load = async () => {
     setLoading(true);
@@ -23,25 +29,45 @@ export const WorkspacePage: React.FC = () => {
   };
 
   useEffect(() => {
+    if (!online) {
+      setLoading(false);
+      return;
+    }
     void load();
-  }, []);
+  }, [online, workspaceEpoch]);
 
   return (
     <section className="page">
-      <p className="eyebrow">Sandbox</p>
-      <h1>Workspace</h1>
-      <p className="muted">Governed Agent workspace only. The host filesystem is not exposed.</p>
-      <button className="btn" onClick={() => void load()}>Refresh</button>
-      {loading ? <LoadingState /> : null}
-      {error ? <ErrorState>{error}</ErrorState> : null}
+      <PageHeader
+        eyebrow="Sandbox"
+        title="Workspace"
+        actions={
+          <button className="btn" disabled={!online || loading} onClick={() => void load()}>
+            Refresh
+          </button>
+        }
+      >
+        Governed Agent workspace only. The host filesystem is not exposed.
+      </PageHeader>
+      {!online ? <OfflineState /> : null}
+      {online && loading ? <LoadingState label="Reading workspace listing…" /> : null}
+      <IssueBanner message={error} />
       {data ? (
         <article className="panel">
           <h2>Root</h2>
           <div className="mono">{data.workspace_root}</div>
-          <p className="muted">{data.files.length} file{data.files.length === 1 ? "" : "s"} under the sandbox.</p>
+          <p className="muted">
+            {data.files.length} file{data.files.length === 1 ? "" : "s"} under the sandbox
+            {data.files.length > 0
+              ? ` · ${formatBytes(data.files.reduce((sum, file) => sum + file.size_bytes, 0))} total`
+              : ""}
+            .
+          </p>
         </article>
       ) : null}
-      {data && data.files.length === 0 ? <EmptyState>Workspace is empty.</EmptyState> : null}
+      {data && data.files.length === 0 ? (
+        <EmptyState title="Workspace is empty">Files appear here after governed write or coding operations.</EmptyState>
+      ) : null}
     </section>
   );
 };

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { json } from "../lib/api";
-import { ErrorState, LoadingState, UnavailableState } from "../components/ui";
+import { IssueBanner, LoadingState, MetricList, OfflineState, PageHeader, UnavailableState } from "../components/ui";
 import { useHealth } from "../state/HealthContext";
 import type { RuntimeSettings } from "../lib/types";
 
@@ -9,8 +9,13 @@ export const ModelsPage: React.FC = () => {
   const [settings, setSettings] = useState<RuntimeSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const online = health.connection === "online";
 
   useEffect(() => {
+    if (!online) {
+      setLoading(false);
+      return;
+    }
     const load = async () => {
       try {
         setSettings(await json<RuntimeSettings>("/api/settings"));
@@ -23,36 +28,30 @@ export const ModelsPage: React.FC = () => {
       }
     };
     void load();
-  }, []);
+  }, [online]);
 
   return (
     <section className="page">
-      <p className="eyebrow">Intelligence</p>
-      <h1>Models</h1>
-      <p className="muted">Active model configuration from `/api/settings`. A full model-registry HTTP API is not exposed.</p>
+      <PageHeader eyebrow="Intelligence" title="Models">
+        Active model configuration from `/api/settings`. A full model-registry HTTP API is not exposed.
+      </PageHeader>
+      {!online ? <OfflineState /> : null}
       {loading ? <LoadingState /> : null}
-      {error ? <ErrorState>{error}</ErrorState> : null}
+      <IssueBanner message={error} />
       {settings ? (
         <article className="panel">
           <h2>Configured routing</h2>
-          <dl className="meta-list">
-            <div>
-              <dt>Provider</dt>
-              <dd>{settings.model_provider ?? "unavailable"}</dd>
-            </div>
-            <div>
-              <dt>Model name</dt>
-              <dd>{settings.model_name ?? "unavailable"}</dd>
-            </div>
-            <div>
-              <dt>Local host</dt>
-              <dd>{settings.local_model_host ?? "unavailable"}</dd>
-            </div>
-            <div>
-              <dt>Health layer</dt>
-              <dd>{health.connection === "online" ? "models layer reported active" : "unavailable"}</dd>
-            </div>
-          </dl>
+          <MetricList
+            items={[
+              { label: "Provider", value: settings.model_provider ?? "unavailable" },
+              { label: "Model name", value: settings.model_name ?? "unavailable" },
+              { label: "Local host", value: settings.local_model_host ?? "unavailable" },
+              {
+                label: "Health layer",
+                value: health.connection === "online" ? "models layer reported active" : "unavailable",
+              },
+            ]}
+          />
         </article>
       ) : null}
       <UnavailableState title="Registry listing NOT EXPOSED">

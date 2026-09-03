@@ -1,13 +1,27 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { json } from "../lib/api";
-import { EmptyState, ErrorState, LoadingState, UnavailableState } from "../components/ui";
+import {
+  EmptyState,
+  FileTree,
+  IssueBanner,
+  LoadingState,
+  OfflineState,
+  PageHeader,
+  UnavailableState,
+} from "../components/ui";
+import { formatBytes, formatTime } from "../lib/format";
+import { useHealth } from "../state/HealthContext";
+import { useSession } from "../state/SessionContext";
 import type { WorkspaceFile, WorkspaceListing } from "../lib/types";
 
 export const FilesPage: React.FC = () => {
+  const { health } = useHealth();
+  const { workspaceEpoch } = useSession();
   const [data, setData] = useState<WorkspaceListing | null>(null);
-  const [selected, setSelected] = useState<WorkspaceFile | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const online = health.connection === "online";
 
   const load = async () => {
     setLoading(true);
@@ -24,38 +38,48 @@ export const FilesPage: React.FC = () => {
   };
 
   useEffect(() => {
+    if (!online) {
+      setLoading(false);
+      return;
+    }
     void load();
-  }, []);
+  }, [online, workspaceEpoch]);
+
+  const selected: WorkspaceFile | null = useMemo(
+    () => data?.files.find((file) => file.id === selectedId) ?? null,
+    [data, selectedId],
+  );
 
   return (
-    <section className="page page--wide">
-      <p className="eyebrow">Sandbox</p>
-      <h1>Files</h1>
-      <p className="muted">Workspace-relative files from `/api/workspace/files`. There is no unrestricted disk browser.</p>
-      <button className="btn" onClick={() => void load()}>Refresh</button>
-      {loading ? <LoadingState /> : null}
-      {error ? <ErrorState>{error}</ErrorState> : null}
-      <div className="split">
-        <article className="panel">
+    <section className="page page--wide page--fill">
+      <PageHeader
+        eyebrow="Sandbox"
+        title="Files"
+        actions={
+          <button className="btn" disabled={!online || loading} onClick={() => void load()}>
+            Refresh
+          </button>
+        }
+      >
+        Workspace-relative files from `/api/workspace/files`. There is no unrestricted disk browser.
+      </PageHeader>
+      {!online ? <OfflineState /> : null}
+      <IssueBanner message={error} />
+      <div className="split page--fill">
+        <article className="panel panel--fill">
           <h2>Tree</h2>
-          {!data || data.files.length === 0 ? (
-            <EmptyState>No files in the sandbox.</EmptyState>
-          ) : (
-            <ul className="plain-list">
-              {data.files.map((file) => (
-                <li key={file.id}>
-                  <button className="linkish mono" onClick={() => setSelected(file)}>
-                    {file.path}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+          {loading ? <LoadingState label="Listing sandbox files…" /> : null}
+          {!loading && (!data || data.files.length === 0) ? (
+            <EmptyState title="No files in the sandbox">Run a goal that writes a file, then refresh.</EmptyState>
+          ) : null}
+          {data && data.files.length > 0 ? (
+            <FileTree files={data.files} selectedId={selectedId} onSelect={setSelectedId} />
+          ) : null}
         </article>
-        <article className="panel">
+        <article className="panel panel--fill">
           <h2>Metadata</h2>
           {!selected ? (
-            <EmptyState>Select a file.</EmptyState>
+            <EmptyState title="Select a file">Choose a path to inspect name, size, and modified time.</EmptyState>
           ) : (
             <dl className="meta-list">
               <div>
@@ -68,11 +92,11 @@ export const FilesPage: React.FC = () => {
               </div>
               <div>
                 <dt>Size</dt>
-                <dd>{selected.size_bytes} bytes</dd>
+                <dd>{formatBytes(selected.size_bytes)}</dd>
               </div>
               <div>
                 <dt>Modified</dt>
-                <dd>{selected.modified_at}</dd>
+                <dd>{formatTime(selected.modified_at)}</dd>
               </div>
             </dl>
           )}
