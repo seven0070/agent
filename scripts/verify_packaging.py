@@ -50,15 +50,15 @@ def main() -> int:
         errors.append("CI still tests Python 3.10 which cannot install agentscope 2.x")
     if "build_backend_sidecar.py" not in workflow:
         errors.append("CI does not build the sidecar via scripts/build_backend_sidecar.py")
-    if "npx --prefix ui tauri build" in workflow and "working-directory: ui" not in workflow:
-        errors.append("npx --prefix ui tauri build runs with cwd=ui/, which double-nests beforeBuildCommand")
-    if "working-directory: ui" not in workflow:
-        errors.append("CI must run tauri build with working-directory ui so beforeBuildCommand can npm run build")
+    if "working-directory: ui" in workflow:
+        errors.append("CI must not run tauri build from ui/; tauri.conf.json lives in src-tauri/")
+    if "npx --prefix ui tauri build" not in workflow:
+        errors.append("CI must invoke Tauri from repository root via npx --prefix ui tauri build")
     if "--bundles" not in workflow:
         errors.append("CI must pass platform-specific --bundles (msi/nsis vs deb/appimage)")
     before_build = conf.get("build", {}).get("beforeBuildCommand") or ""
-    if "--prefix ui" in before_build:
-        errors.append("beforeBuildCommand must be 'npm run build' because Tauri cwd is ui/")
+    if "npm --prefix ui run build" not in before_build:
+        errors.append("beforeBuildCommand must be 'npm --prefix ui run build' for repository-root Tauri cwd")
     if "PYTHONUTF8" not in workflow:
         errors.append("CI test job must set PYTHONUTF8 for Windows cp1252 consoles")
     if "Packaged Runtime Smoke (Windows)" not in workflow:
