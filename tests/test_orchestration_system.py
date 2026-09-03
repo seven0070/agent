@@ -58,6 +58,37 @@ def test_planner_file_create_uses_write_tool_not_model_path() -> None:
     assert extract_filename("Create a file named ledger.csv containing totals") == "ledger.csv"
     assert extract_file_content("Create a file named ledger.csv containing totals") == "totals"
 
+
+def test_planner_edit_file_is_write_not_coding() -> None:
+    planner = RuleBasedPlanner()
+    plan = planner.create_plan("Edit file gamma.txt containing the text rewritten-ok")
+    assert "task_write_1" in plan.tasks
+    assert plan.tasks["task_write_1"].required_tool_id == "write_file-v1"
+    assert plan.tasks["task_write_1"].inputs["content"] == "rewritten-ok"
+
+
+def test_planner_multi_file_create_emits_multiple_writes() -> None:
+    planner = RuleBasedPlanner()
+    plan = planner.create_plan(
+        "Create a file named left.txt containing LEFT and a file named right.txt containing RIGHT."
+    )
+    assert "task_write_1" in plan.tasks
+    assert "task_write_2" in plan.tasks
+    assert plan.tasks["task_write_1"].inputs["relative_path"] == "left.txt"
+    assert plan.tasks["task_write_2"].inputs["relative_path"] == "right.txt"
+
+
+def test_missing_file_read_fails_closed_not_calculator_zero() -> None:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        broker = CapabilityBroker(workspace_dir=tmp_dir)
+        planner = RuleBasedPlanner()
+        plan = planner.create_plan("Read file does-not-exist.txt")
+        orchestrator = PlanOrchestrator(broker=broker)
+        completed = orchestrator.execute_plan(plan)
+        assert completed.status == "failed"
+        tools = [t.required_tool_id for t in completed.tasks.values() if t.required_tool_id]
+        assert "calculator-v1" not in tools
+
 def test_dag_cycle_detection() -> None:
     """Tests DAG cycle detection in PlanOrchestrator."""
     orchestrator = PlanOrchestrator()

@@ -5,6 +5,7 @@ Manages session lifecycle, workspace file operations, test execution, permission
 
 import time
 import os
+import re
 import uuid
 from typing import List, Optional, Dict, Any
 from agent.coding.interface import CodingEngineInterface
@@ -96,12 +97,17 @@ class JcodeAdapter(CodingEngineInterface):
                     }
                 )
             else:
-                from agent.coding.generator import generate_workspace_files
+                from agent.coding.generator import generate_module_source, generate_workspace_files, infer_spec_from_workspace
                 from agent.coding.goal_spec import parse_coding_goal
 
-                spec = parse_coding_goal(task.goal)
-                generated = generate_workspace_files(spec)
+                repair_goal = bool(re.search(r"\b(debug|fix|repair|broken|failing)\b", task.goal, flags=re.IGNORECASE))
+                inferred = infer_spec_from_workspace(workspace_root) if repair_goal else None
+                spec = inferred or parse_coding_goal(task.goal)
                 generated_test = spec.test_name
+                if inferred is not None:
+                    generated = {spec.module_name: generate_module_source(spec)}
+                else:
+                    generated = generate_workspace_files(spec)
                 for rel_path, content in generated.items():
                     abs_path = self.workspace_restrictor.validate_and_resolve(rel_path)
                     parent = os.path.dirname(abs_path)

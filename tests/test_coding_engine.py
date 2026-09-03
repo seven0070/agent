@@ -160,3 +160,40 @@ def test_jcode_implements_listed_arithmetic_operations() -> None:
         assert result.tests_failed == 0
         assert result.tests_run >= 1
         assert tests.count("def test_") >= 4
+
+
+def test_jcode_generates_min_max_from_requested_names() -> None:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        adapter = JcodeAdapter(workspace_dir=tmp_dir)
+        task = CodingTask(
+            task_id="ct-minmax",
+            goal="Create python functions min_value and max_value with tests.",
+            workspace_dir=tmp_dir,
+            test_command="pytest",
+        )
+        result = adapter.execute_coding_task(task)
+        assert result.status == "success"
+        ns = {}
+        exec(open(os.path.join(tmp_dir, "module.py"), encoding="utf-8").read(), ns)
+        assert ns["min_value"](3, 1) == 1
+        assert ns["max_value"](3, 1) == 3
+
+
+def test_jcode_repairs_existing_failing_implementation_from_tests() -> None:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        with open(os.path.join(tmp_dir, "module.py"), "w", encoding="utf-8") as handle:
+            handle.write("def broken_add(a, b):\n    return a - b\n")
+        with open(os.path.join(tmp_dir, "test_module.py"), "w", encoding="utf-8") as handle:
+            handle.write("from module import broken_add\n\ndef test_broken_add():\n    assert broken_add(2, 3) == 5\n")
+        adapter = JcodeAdapter(workspace_dir=tmp_dir)
+        task = CodingTask(
+            task_id="ct-repair",
+            goal="Fix the python function broken_add so tests pass.",
+            workspace_dir=tmp_dir,
+            test_command="pytest",
+        )
+        result = adapter.execute_coding_task(task)
+        assert result.status == "success"
+        ns = {}
+        exec(open(os.path.join(tmp_dir, "module.py"), encoding="utf-8").read(), ns)
+        assert ns["broken_add"](2, 3) == 5

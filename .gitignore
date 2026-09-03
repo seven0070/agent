@@ -31,6 +31,7 @@ ENV/
 .coverage
 htmlcov/
 .tox/
+tests/benchmark/last_report.json
 
 # Environment and Secrets
 .env

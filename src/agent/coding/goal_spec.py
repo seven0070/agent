@@ -129,6 +129,12 @@ def _spec_for_name(name: str) -> FunctionSpec:
         "subtract": FunctionSpec("subtract", "a, b", "return a - b", [((5, 2), 3), ((10, 4), 6)]),
         "multiply": FunctionSpec("multiply", "a, b", "return a * b", [((3, 4), 12), ((7, 8), 56)]),
         "divide": FunctionSpec("divide", "a, b", "return a / b", [((10, 2), 5), ((9, 3), 3)]),
+        "min": FunctionSpec("min", "a, b", "return min(a, b)", [((3, 1), 1), ((8, 2), 2)]),
+        "max": FunctionSpec("max", "a, b", "return max(a, b)", [((3, 1), 3), ((8, 2), 8)]),
+        "min_value": FunctionSpec("min_value", "a, b", "return min(a, b)", [((3, 1), 1), ((8, 2), 2)]),
+        "max_value": FunctionSpec("max_value", "a, b", "return max(a, b)", [((3, 1), 3), ((8, 2), 8)]),
+        "abs_value": FunctionSpec("abs_value", "value", "return abs(value)", [((-3,), 3), ((4,), 4)]),
+        "clamp": FunctionSpec("clamp", "value, lo, hi", "return max(lo, min(hi, value))", [((5, 0, 10), 5), ((-1, 0, 10), 0)]),
     }
     if canonical in catalog:
         spec = catalog[canonical]

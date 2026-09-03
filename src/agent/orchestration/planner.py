@@ -25,16 +25,9 @@ _CONTENT_PATTERNS = (
     r"that says\s+(.+?)(?:\.(?:\s|$)|$)",
 )
 
-_CODING_HINTS = (
-    "code",
-    "python module",
-    "function",
-    "functions",
-    "edit file",
-    "create test",
-    "jcode",
-    "pytest",
-    "unit test",
+_PAIR_PATTERN = re.compile(
+    rf"(?:named|called)\s+({_FILENAME_TOKEN})\s+containing(?:\s+the)?(?:\s+text)?\s+(?:[\"'](.+?)[\"']|(.+?))(?=\s+and\s+(?:a\s+)?file\b|\s+and\s+(?:create|write|named)\b|$)",
+    flags=re.IGNORECASE | re.DOTALL,
 )
 
 
@@ -63,14 +56,50 @@ def extract_file_content(goal: str) -> str:
     return ""
 
 
+def extract_file_write_ops(goal: str) -> List[tuple]:
+    """Extract one or more (filename, content) pairs from a create/write goal."""
+    ops: List[tuple] = []
+    seen = set()
+    for match in _PAIR_PATTERN.finditer(goal):
+        name = match.group(1).strip()
+        raw = (match.group(2) or match.group(3) or "").strip()
+        raw = re.split(r"\b(?:verify|then|report|and then)\b", raw, maxsplit=1, flags=re.IGNORECASE)[0]
+        content = raw.strip(" \t\r\n.,;:")
+        if ".." in name or "/" in name or "\\" in name or name in seen:
+            continue
+        seen.add(name)
+        ops.append((name, content))
+    if not ops:
+        name = extract_filename(goal)
+        if name:
+            ops.append((name, extract_file_content(goal)))
+    return ops
+
+
+def is_coding_goal(goal: str) -> bool:
+    """True when the goal should go to the coding engine rather than file I/O."""
+    lower = goal.lower()
+    if any(token in lower for token in ("python module", "jcode", "pytest", "unit test", "create test")):
+        return True
+    if "python" in lower and any(token in lower for token in ("function", "functions", "module", "debug", "fix", "test")):
+        return True
+    if re.search(r"\b(debug|fix)\b", lower) and re.search(r"\b(python|test|tests|code|implementation)\b", lower):
+        return True
+    if "function" in lower or "functions" in lower:
+        return True
+    if re.search(r"\bcode\b", lower) and not re.search(r"\bfiles?\b", lower):
+        return True
+    return False
+
+
 def is_file_write_goal(goal: str) -> bool:
-    """True when the goal is a workspace file create/write, not a coding or calc task."""
+    """True when the goal is a workspace file create/write/edit, not a coding or calc task."""
+    if is_coding_goal(goal):
+        return False
     lower = goal.lower()
     mentions_file = bool(re.search(r"\bfiles?\b", lower))
-    write_verb = bool(re.search(r"\b(create|write|save|make|put)\b", lower))
+    write_verb = bool(re.search(r"\b(create|write|save|make|put|edit|replace|update|overwrite)\b", lower))
     has_name = extract_filename(goal) is not None
-    if any(hint in lower for hint in _CODING_HINTS):
-        return False
     return (mentions_file and write_verb) or (has_name and write_verb and mentions_file)
 
 
@@ -104,7 +133,7 @@ class RuleBasedPlanner:
         has_math = bool(re.search(r"(\d+(?:\.\d+)?\s*[\+\-\*/]+\s*\d+(?:\.\d+)?)", goal))
 
         # Goal Pattern 1: Coding / Software Engineering Task
-        if any(keyword in goal_lower for keyword in ["code", "python module", "function", "edit file", "create test", "jcode"]):
+        if is_coding_goal(goal):
             t1 = PlanTask(
                 id="task_code_1",
                 description="Execute coding task with Jcode engine",
@@ -153,10 +182,10 @@ class RuleBasedPlanner:
             tasks[t1.id] = t1
             tasks[t2.id] = t2
 
-        # Goal Pattern 3: Workspace file create/write (not coding, not calc)
+        # Goal Pattern 3: Workspace file create/write/edit (not coding, not calc)
         elif is_file_write_goal(goal):
-            target_name = extract_filename(goal)
-            if target_name is None:
+            ops = extract_file_write_ops(goal)
+            if not ops:
                 t1 = PlanTask(
                     id="task_gen_1",
                     description=f"Process goal: {goal}",
@@ -166,18 +195,19 @@ class RuleBasedPlanner:
                 )
                 tasks[t1.id] = t1
             else:
-                t1 = PlanTask(
-                    id="task_write_1",
-                    description="Write requested content to a workspace file",
-                    dependencies=[],
-                    required_tool_id="write_file-v1",
-                    inputs={
-                        "relative_path": target_name,
-                        "content": extract_file_content(goal),
-                    },
-                    max_retries=extra_retries,
-                )
-                tasks[t1.id] = t1
+                prev = None
+                for index, (target_name, content) in enumerate(ops, start=1):
+                    tid = f"task_write_{index}"
+                    t = PlanTask(
+                        id=tid,
+                        description="Write requested content to a workspace file",
+                        dependencies=[prev] if prev else [],
+                        required_tool_id="write_file-v1",
+                        inputs={"relative_path": target_name, "content": content},
+                        max_retries=extra_retries,
+                    )
+                    tasks[tid] = t
+                    prev = tid
 
         # Goal Pattern 4: Math calculation only
         elif "calculate" in goal_lower or "math" in goal_lower or "compute" in goal_lower or has_math:

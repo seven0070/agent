@@ -179,13 +179,16 @@ class PlanOrchestrator:
         new_tasks: Dict[str, PlanTask] = {}
         for tid, t in plan.tasks.items():
             if tid == failed_task_id:
-                # Replace failed task with repair task or fallback inputs
+                # Calculator-only fallback. File/coding failures must not be
+                # rewritten into a fake successful "0" calculation.
+                if t.required_tool_id and t.required_tool_id != "calculator-v1":
+                    return None
                 repaired = PlanTask(
                     id=f"{tid}_repair",
                     description=f"Repair fallback for {t.description}",
                     dependencies=list(t.dependencies),
                     required_tool_id="calculator-v1",
-                    inputs={"expression": "0"},  # Safe fallback input
+                    inputs={"expression": "0"},
                 )
                 new_tasks[repaired.id] = repaired
             else:
