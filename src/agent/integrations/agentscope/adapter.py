@@ -121,7 +121,10 @@ class AgentScopeAdapter:
                 content=task.prompt,
             )
 
-        plan = self.planner.create_plan(goal=task.prompt)
+        workspace_dir = None
+        if getattr(self.broker, "workspace_manager", None) is not None:
+            workspace_dir = self.broker.workspace_manager.workspace_dir
+        plan = self.planner.create_plan(goal=task.prompt, workspace_dir=workspace_dir)
         self.last_plan = plan
         tools_used: list[str] = []
         files_changed: list[str] = []
@@ -150,23 +153,39 @@ class AgentScopeAdapter:
                 is_fallback=False,
             )
         else:
-            user_msg = self.convert_task_to_msg(task)
+            from agent.orchestration.intent import CONVERSE, classify_intent
 
-            async def _invoke_model_spec(spec: ModelSpec) -> str:
-                chat_model = self.router.factory.create_model(spec)
-                agentscope_agent = Agent(
-                    name=self.name,
-                    system_prompt=self.system_prompt,
-                    model=chat_model,
-                    toolkit=self.toolkit,
+            intent = classify_intent(task.prompt, workspace_dir=workspace_dir)
+            if intent.kind != CONVERSE:
+                exec_result = ModelExecutionResult(
+                    model_id="orchestrator",
+                    provider="orchestration",
+                    output=(
+                        "Required capability/model is unavailable for this task. "
+                        "No real operation was performed."
+                    ),
+                    status="failed",
+                    is_fallback=False,
+                    error="capability-unavailable",
                 )
-                reply_msg: Msg = await agentscope_agent.reply(inputs=user_msg)
-                return reply_msg.get_text_content() if reply_msg else ""
+            else:
+                user_msg = self.convert_task_to_msg(task)
 
-            exec_result = await self.router.execute_with_fallback(
-                task=task,
-                executor_fn=_invoke_model_spec,
-            )
+                async def _invoke_model_spec(spec: ModelSpec) -> str:
+                    chat_model = self.router.factory.create_model(spec)
+                    agentscope_agent = Agent(
+                        name=self.name,
+                        system_prompt=self.system_prompt,
+                        model=chat_model,
+                        toolkit=self.toolkit,
+                    )
+                    reply_msg: Msg = await agentscope_agent.reply(inputs=user_msg)
+                    return reply_msg.get_text_content() if reply_msg else ""
+
+                exec_result = await self.router.execute_with_fallback(
+                    task=task,
+                    executor_fn=_invoke_model_spec,
+                )
 
         if task.session_id and self.context_builder.session_manager:
             self.context_builder.session_manager.add_turn(

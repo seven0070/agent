@@ -9,6 +9,7 @@ from agent.capabilities.permissions import ToolPermissionPolicy
 from agent.capabilities.registry import ToolRegistry
 from agent.capabilities.spec import ToolSpec
 from agent.capabilities.tools.calculator import evaluate_math_expression
+from agent.capabilities.tools.inspect import inspect_structured_data
 from agent.capabilities.tools.workspace import WorkspaceManager
 from agent.capabilities.tools.coding import CodingEngineToolWrapper
 from agent.runtime import LocalAgentScopeRuntime, RuntimeSandbox, NetworkPolicy
@@ -82,6 +83,22 @@ class CapabilityBroker:
                 description="Specialized Jcode coding engine for inspecting workspace, creating/editing code files, and running test suites",
                 risk_level=ToolRiskLevel.MEDIUM,
                 input_schema={"type": "object", "properties": {"goal": {"type": "string"}}, "required": ["goal"]},
+            )
+        )
+        self.registry.register_tool(
+            ToolSpec(
+                id="inspect_data-v1",
+                name="inspect_data",
+                description="Reads JSON or CSV workspace records and answers min/max-style questions about them",
+                risk_level=ToolRiskLevel.LOW,
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "relative_path": {"type": "string"},
+                        "query": {"type": "string"},
+                    },
+                    "required": ["relative_path"],
+                },
             )
         )
 
@@ -172,12 +189,34 @@ class CapabilityBroker:
                     metadata={"files_changed": coding_res.files_changed, "tests_passed": coding_res.tests_passed},
                 )
 
-            else:
+            elif tool_id == "inspect_data-v1":
+                rel_path = kwargs.get("relative_path", "")
+                query = kwargs.get("query", "")
+                self.sandbox.resolve_and_validate_path(rel_path)
+                content = self.workspace_manager.read_file(rel_path)
+                answer = inspect_structured_data(content, query)
                 elapsed_ms = (time.perf_counter() - start_time) * 1000
                 return CapabilityResult(
                     tool_id=tool_id,
+                    success=True,
+                    output=answer,
+                    permission_status=PermissionLevel.ALLOW,
+                    execution_time_ms=round(elapsed_ms, 2),
+                )
+
+            else:
+                elapsed_ms = (time.perf_counter() - start_time) * 1000
+                if tool_id == "capability-unavailable":
+                    error = (
+                        "Required capability/model is unavailable for this task. "
+                        "No real operation was performed."
+                    )
+                else:
+                    error = f"Unknown Tool: Tool '{tool_id}' is not implemented in CapabilityBroker."
+                return CapabilityResult(
+                    tool_id=tool_id,
                     success=False,
-                    error=f"Unknown Tool: Tool '{tool_id}' is not implemented in CapabilityBroker.",
+                    error=error,
                     permission_status=PermissionLevel.ALLOW,
                     execution_time_ms=round(elapsed_ms, 2),
                 )

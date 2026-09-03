@@ -97,17 +97,35 @@ class JcodeAdapter(CodingEngineInterface):
                     }
                 )
             else:
-                from agent.coding.generator import generate_module_source, generate_workspace_files, infer_spec_from_workspace
+                from agent.coding.generator import (
+                    generate_module_source,
+                    generate_workspace_files,
+                    infer_spec_from_workspace,
+                    patch_existing_source_files,
+                )
                 from agent.coding.goal_spec import parse_coding_goal
 
-                repair_goal = bool(re.search(r"\b(debug|fix|repair|broken|failing)\b", task.goal, flags=re.IGNORECASE))
+                repair_goal = bool(
+                    re.search(r"\b(debug|fix|repair|broken|failing)\b", task.goal, flags=re.IGNORECASE)
+                )
                 inferred = infer_spec_from_workspace(workspace_root) if repair_goal else None
-                spec = inferred or parse_coding_goal(task.goal)
-                generated_test = spec.test_name
+                patched = None if inferred is not None else patch_existing_source_files(workspace_root, task.goal)
                 if inferred is not None:
+                    spec = inferred
                     generated = {spec.module_name: generate_module_source(spec)}
+                    generated_test = spec.test_name
+                elif patched:
+                    spec = None
+                    generated = patched
+                    generated_test = None
                 else:
+                    spec = parse_coding_goal(task.goal)
+                    if not spec.functions:
+                        raise ValueError(
+                            "Could not determine the requested program from the goal. No files were changed."
+                        )
                     generated = generate_workspace_files(spec)
+                    generated_test = spec.test_name
                 for rel_path, content in generated.items():
                     abs_path = self.workspace_restrictor.validate_and_resolve(rel_path)
                     parent = os.path.dirname(abs_path)
@@ -135,7 +153,20 @@ class JcodeAdapter(CodingEngineInterface):
             tests_passed = 0
             tests_failed = 0
 
-            if task.test_command:
+            def _workspace_has_tests(root: str) -> bool:
+                for dirpath, _, filenames in os.walk(root):
+                    for filename in filenames:
+                        if filename.startswith("test_") and filename.endswith(".py"):
+                            return True
+                        if filename.endswith("_test.py"):
+                            return True
+                return False
+
+            should_run_tests = bool(task.test_command) and (
+                (generated_test and os.path.isfile(os.path.join(workspace_root, generated_test)))
+                or _workspace_has_tests(workspace_root)
+            )
+            if should_run_tests:
                 self._emit_event("tool_started", session_id, task.task_id, {"action": "run_tests", "command": task.test_command})
                 from agent.runtime.pytest_runner import run_workspace_tests
 

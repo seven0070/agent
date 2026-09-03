@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import glob
 import os
 import runpy
 import sys
@@ -61,10 +60,14 @@ def _run_stdlib_tests(workspace_dir: str, test_target: Optional[str]) -> Dict[st
     elif test_target and os.path.isfile(os.path.join(workspace_dir, test_target)):
         files = [os.path.join(workspace_dir, test_target)]
     else:
-        files = sorted(
-            glob.glob(os.path.join(workspace_dir, "test_*.py"))
-            + glob.glob(os.path.join(workspace_dir, "*_test.py"))
-        )
+        files = []
+        for root, _, filenames in os.walk(workspace_dir):
+            for filename in filenames:
+                if filename.startswith("test_") and filename.endswith(".py"):
+                    files.append(os.path.join(root, filename))
+                elif filename.endswith("_test.py"):
+                    files.append(os.path.join(root, filename))
+        files = sorted(files)
     if not files:
         return {
             "success": False,

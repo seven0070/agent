@@ -30,8 +30,17 @@ def _infer_body(args: tuple, expected: object) -> Optional[Tuple[str, str]]:
                 return "a, b", "return max(a, b)"
         except Exception:
             return None
-    if len(args) == 1 and args[0] == expected:
-        return "value", "return value"
+    if len(args) == 1:
+        value = args[0]
+        try:
+            if value * 9 / 5 + 32 == expected:
+                return "celsius", "return celsius * 9 / 5 + 32"
+            if (value - 32) * 5 / 9 == expected:
+                return "fahrenheit", "return (fahrenheit - 32) * 5 / 9"
+        except Exception:
+            pass
+        if value == expected:
+            return "value", "return value"
     if len(args) == 3:
         value, lo, hi = args
         try:
@@ -118,7 +127,80 @@ def generate_test_source(spec: CodingGoalSpec) -> str:
 
 
 def generate_workspace_files(spec: CodingGoalSpec) -> Dict[str, str]:
+    if spec.project:
+        return generate_project_files(spec)
     return {
         spec.module_name: generate_module_source(spec),
         spec.test_name: generate_test_source(spec),
     }
+
+
+def generate_project_files(spec: CodingGoalSpec) -> Dict[str, str]:
+    """Emit a small multi-file package plus tests for a project-style coding goal."""
+    names = ", ".join(fn.name for fn in spec.functions)
+    tests = generate_test_source(spec).replace(
+        f"from {spec.module_name[:-3]} import {names}",
+        f"from pkg.core import {names}",
+    )
+    return {
+        "pkg/__init__.py": "",
+        "pkg/core.py": generate_module_source(spec),
+        "tests/test_core.py": tests,
+        spec.module_name: generate_module_source(spec),
+        spec.test_name: generate_test_source(spec),
+    }
+
+
+def extract_replacement_text(goal: str) -> str:
+    patterns = (
+        r"should say\s+[\"'](.+?)[\"']",
+        r"should say\s+(.+?)(?:\.(?:\s|$)|$)",
+        r"to say\s+[\"'](.+?)[\"']",
+        r"to say\s+(.+?)(?:\.(?:\s|$)|$)",
+        r"now reads\s+[\"'](.+?)[\"']",
+        r"now reads\s+(.+?)(?:\.(?:\s|$)|$)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, goal, flags=re.IGNORECASE | re.DOTALL)
+        if match:
+            text = match.group(1).strip()
+            text = re.split(r"\b(?:verify|then|report)\b", text, maxsplit=1, flags=re.IGNORECASE)[0]
+            return text.strip(" \t\r\n.,;:")
+    return ""
+
+
+def patch_existing_source_files(workspace_dir: str, goal: str) -> Optional[Dict[str, str]]:
+    """Patch greeting/title/message strings in existing Python files."""
+    replacement = extract_replacement_text(goal)
+    if not replacement:
+        return None
+    lower = goal.lower()
+    if not re.search(r"\b(greeting|title|message|hello|script)\b", lower):
+        return None
+    assign_re = re.compile(
+        r'(?P<pre>^\s*(?:GREETING|greeting|TITLE|title|MESSAGE|message)\s*=\s*)(?P<q>["\'])(?P<val>.*?)(?P=q)',
+        flags=re.MULTILINE,
+    )
+    result: Dict[str, str] = {}
+    for name in os.listdir(workspace_dir):
+        if not name.endswith(".py") or name.startswith("test_"):
+            continue
+        path = os.path.join(workspace_dir, name)
+        if not os.path.isfile(path):
+            continue
+        text = open(path, encoding="utf-8").read()
+        new_text, count = assign_re.subn(
+            lambda match: f"{match.group('pre')}{match.group('q')}{replacement}{match.group('q')}",
+            text,
+            count=1,
+        )
+        if count == 0 and re.search(r"\b(greeting|GREETING)\b", text):
+            new_text, count = re.subn(
+                r'(["\'])([^"\']+)\1',
+                lambda match: f"{match.group(1)}{replacement}{match.group(1)}",
+                text,
+                count=1,
+            )
+        if count:
+            result[name] = new_text
+    return result or None

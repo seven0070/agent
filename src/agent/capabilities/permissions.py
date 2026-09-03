@@ -13,6 +13,7 @@ class ToolPermissionPolicy:
     DEFAULT_POLICIES: Dict[str, PermissionLevel] = {
         "calculator-v1": PermissionLevel.ALLOW,
         "read_file-v1": PermissionLevel.ALLOW,
+        "inspect_data-v1": PermissionLevel.ALLOW,
         "write_file-v1": PermissionLevel.REQUIRE_APPROVAL,
         "coding-engine-v1": PermissionLevel.ALLOW,
         "shell-v1": PermissionLevel.DENY,

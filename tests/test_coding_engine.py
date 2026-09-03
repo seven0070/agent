@@ -197,3 +197,115 @@ def test_jcode_repairs_existing_failing_implementation_from_tests() -> None:
         ns = {}
         exec(open(os.path.join(tmp_dir, "module.py"), encoding="utf-8").read(), ns)
         assert ns["broken_add"](2, 3) == 5
+
+
+def test_jcode_implements_unnamed_conversion_program() -> None:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        adapter = JcodeAdapter(workspace_dir=tmp_dir)
+        result = adapter.execute_coding_task(
+            CodingTask(
+                task_id="ct-convert",
+                goal="Make a small program that converts Celsius to Fahrenheit.",
+                workspace_dir=tmp_dir,
+                test_command="pytest",
+            )
+        )
+        assert result.status == "success"
+        ns = {}
+        exec(open(os.path.join(tmp_dir, "module.py"), encoding="utf-8").read(), ns)
+        assert ns["celsius_to_fahrenheit"](0) == 32.0
+        assert ns["celsius_to_fahrenheit"](100) == 212.0
+        assert "def add(" not in open(os.path.join(tmp_dir, "module.py"), encoding="utf-8").read()
+
+
+def test_jcode_patches_existing_greeting_script() -> None:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        with open(os.path.join(tmp_dir, "greet.py"), "w", encoding="utf-8") as handle:
+            handle.write('GREETING = "Hello"\n\ndef greet():\n    return GREETING\n')
+        adapter = JcodeAdapter(workspace_dir=tmp_dir)
+        result = adapter.execute_coding_task(
+            CodingTask(
+                task_id="ct-greet",
+                goal="The greeting in the existing Python script should say Good evening.",
+                workspace_dir=tmp_dir,
+                test_command="pytest",
+            )
+        )
+        assert result.status == "success"
+        source = open(os.path.join(tmp_dir, "greet.py"), encoding="utf-8").read()
+        assert "Good evening" in source
+        assert "def greet(" in source
+
+
+def test_jcode_greeting_patch_does_not_rewrite_unrelated_modules() -> None:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        with open(os.path.join(tmp_dir, "greet.py"), "w", encoding="utf-8") as handle:
+            handle.write('GREETING = "Hello"\n\ndef greet():\n    return GREETING\n')
+        with open(os.path.join(tmp_dir, "module.py"), "w", encoding="utf-8") as handle:
+            handle.write('"""Generated workspace module implementing the requested functions."""\n\ndef celsius_to_fahrenheit(celsius):\n    return celsius * 9 / 5 + 32\n')
+        adapter = JcodeAdapter(workspace_dir=tmp_dir)
+        result = adapter.execute_coding_task(
+            CodingTask(
+                task_id="ct-greet-isolated",
+                goal="The greeting in the existing Python script should say Good evening.",
+                workspace_dir=tmp_dir,
+                test_command="pytest",
+            )
+        )
+        assert result.status == "success"
+        greet = open(os.path.join(tmp_dir, "greet.py"), encoding="utf-8").read()
+        module = open(os.path.join(tmp_dir, "module.py"), encoding="utf-8").read()
+        assert "Good evening" in greet
+        assert "celsius_to_fahrenheit" in module
+        assert "Good evening" not in module
+
+
+def test_jcode_multi_file_project_layout() -> None:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        adapter = JcodeAdapter(workspace_dir=tmp_dir)
+        result = adapter.execute_coding_task(
+            CodingTask(
+                task_id="ct-project",
+                goal="Make a tiny project that can add two numbers and prove it with tests.",
+                workspace_dir=tmp_dir,
+                test_command="pytest",
+            )
+        )
+        assert result.status == "success"
+        assert os.path.isfile(os.path.join(tmp_dir, "pkg", "core.py"))
+        assert os.path.isfile(os.path.join(tmp_dir, "tests", "test_core.py"))
+        ns = {}
+        exec(open(os.path.join(tmp_dir, "pkg", "core.py"), encoding="utf-8").read(), ns)
+        assert ns["add"](2, 3) == 5
+
+
+def test_jcode_larger_of_two_without_named_function() -> None:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        adapter = JcodeAdapter(workspace_dir=tmp_dir)
+        result = adapter.execute_coding_task(
+            CodingTask(
+                task_id="ct-larger",
+                goal="A program that reports the larger of two numbers, with tests.",
+                workspace_dir=tmp_dir,
+                test_command="pytest",
+            )
+        )
+        assert result.status == "success"
+        ns = {}
+        exec(open(os.path.join(tmp_dir, "module.py"), encoding="utf-8").read(), ns)
+        assert ns["larger"](3, 1) == 3
+
+
+def test_jcode_fails_honestly_when_goal_cannot_be_implemented() -> None:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        adapter = JcodeAdapter(workspace_dir=tmp_dir)
+        result = adapter.execute_coding_task(
+            CodingTask(
+                task_id="ct-empty",
+                goal="Invent a quantum compiler backend for this workspace.",
+                workspace_dir=tmp_dir,
+                test_command="pytest",
+            )
+        )
+        assert result.status in ("failed", "error")
+        assert not os.path.isfile(os.path.join(tmp_dir, "module.py"))

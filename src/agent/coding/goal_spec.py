@@ -78,6 +78,7 @@ class CodingGoalSpec:
     functions: List[FunctionSpec] = field(default_factory=list)
     module_name: str = "module.py"
     test_name: str = "test_module.py"
+    project: bool = False
 
 
 def _ident(raw: str) -> str | None:
@@ -133,8 +134,34 @@ def _spec_for_name(name: str) -> FunctionSpec:
         "max": FunctionSpec("max", "a, b", "return max(a, b)", [((3, 1), 3), ((8, 2), 8)]),
         "min_value": FunctionSpec("min_value", "a, b", "return min(a, b)", [((3, 1), 1), ((8, 2), 2)]),
         "max_value": FunctionSpec("max_value", "a, b", "return max(a, b)", [((3, 1), 3), ((8, 2), 8)]),
+        "larger": FunctionSpec("larger", "a, b", "return max(a, b)", [((3, 1), 3), ((8, 2), 8)]),
+        "smaller": FunctionSpec("smaller", "a, b", "return min(a, b)", [((3, 1), 1), ((8, 2), 2)]),
         "abs_value": FunctionSpec("abs_value", "value", "return abs(value)", [((-3,), 3), ((4,), 4)]),
         "clamp": FunctionSpec("clamp", "value, lo, hi", "return max(lo, min(hi, value))", [((5, 0, 10), 5), ((-1, 0, 10), 0)]),
+        "celsius_to_fahrenheit": FunctionSpec(
+            "celsius_to_fahrenheit",
+            "celsius",
+            "return celsius * 9 / 5 + 32",
+            [((0,), 32.0), ((100,), 212.0)],
+        ),
+        "fahrenheit_to_celsius": FunctionSpec(
+            "fahrenheit_to_celsius",
+            "fahrenheit",
+            "return (fahrenheit - 32) * 5 / 9",
+            [((32,), 0.0), ((212,), 100.0)],
+        ),
+        "km_to_miles": FunctionSpec(
+            "km_to_miles",
+            "kilometers",
+            "return kilometers * 0.621371",
+            [((1,), 0.621371)],
+        ),
+        "miles_to_km": FunctionSpec(
+            "miles_to_km",
+            "miles",
+            "return miles / 0.621371",
+            [((1,), 1.6093444978927313)],
+        ),
     }
     if canonical in catalog:
         spec = catalog[canonical]
@@ -142,9 +169,66 @@ def _spec_for_name(name: str) -> FunctionSpec:
     return FunctionSpec(name=name, args="value", body="return value", cases=[((1,), 1), (("ok",), "ok")])
 
 
+def _is_generic_module_request(goal: str) -> bool:
+    lower = goal.lower()
+    if infer_conversions(goal) or infer_comparisons(goal):
+        return False
+    if re.search(r"\b(program|project|package|convert|greeting)\b", lower):
+        return False
+    return bool(re.search(r"\b(python module|create python|write python)\b", lower))
+
+
+def infer_conversions(goal: str) -> List[FunctionSpec]:
+    """Infer unit-conversion functions from the requested outcome."""
+    lower = goal.lower()
+    found: List[FunctionSpec] = []
+    pairs = (
+        (("celsius", "centigrade"), ("fahrenheit",), "celsius_to_fahrenheit"),
+        (("fahrenheit",), ("celsius", "centigrade"), "fahrenheit_to_celsius"),
+        (("kilometer", "kilometre", "km"), ("mile",), "km_to_miles"),
+        (("mile",), ("kilometer", "kilometre", "km"), "miles_to_km"),
+    )
+
+    def _first_index(tokens: tuple) -> int | None:
+        hits = [lower.find(token) for token in tokens if token in lower]
+        return min(hits) if hits else None
+
+    for sources, targets, name in pairs:
+        source_at = _first_index(sources)
+        target_at = _first_index(targets)
+        if source_at is None or target_at is None or source_at >= target_at:
+            continue
+        spec = _spec_for_name(name)
+        if spec.name not in {item.name for item in found}:
+            found.append(spec)
+    return found
+
+
+def infer_comparisons(goal: str) -> List[FunctionSpec]:
+    """Infer comparison helpers when the goal describes selecting among values."""
+    lower = goal.lower()
+    found: List[FunctionSpec] = []
+    if re.search(r"\b(larger|greater|biggest|highest) of\b", lower) or re.search(
+        r"\blarger of two\b", lower
+    ):
+        found.append(_spec_for_name("larger"))
+    if re.search(r"\b(smaller|lesser|lowest|smallest) of\b", lower):
+        found.append(_spec_for_name("smaller"))
+    return found
+
+
 def parse_coding_goal(goal: str) -> CodingGoalSpec:
-    names = extract_function_names(goal)
-    if not names:
-        names = ["add"]
-    functions = [_spec_for_name(name) for name in names]
-    return CodingGoalSpec(functions=functions)
+    functions: List[FunctionSpec] = []
+    seen = set()
+    for spec in infer_conversions(goal) + infer_comparisons(goal):
+        if spec.name not in seen:
+            functions.append(spec)
+            seen.add(spec.name)
+    for name in extract_function_names(goal):
+        if name not in seen:
+            functions.append(_spec_for_name(name))
+            seen.add(name)
+    if not functions and _is_generic_module_request(goal):
+        functions = [_spec_for_name("add")]
+    project = bool(re.search(r"\b(project|package|multi-file|multiple files)\b", goal, flags=re.IGNORECASE))
+    return CodingGoalSpec(functions=functions, project=project)

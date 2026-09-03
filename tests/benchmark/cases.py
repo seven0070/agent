@@ -116,6 +116,77 @@ def python_call(module: str, func: str, args: tuple, expected: Any) -> CheckFn:
     return _check
 
 
+def not_mocked() -> CheckFn:
+    def _check(ctx: Dict[str, Any]) -> Tuple[bool, str]:
+        blob = str(ctx.get("output") or "")
+        if "Mocked AgentScope response content" in blob:
+            return False, "silent mock fallback"
+        return True, "not mocked"
+
+    return _check
+
+
+def used_intent(kind: str) -> CheckFn:
+    def _check(ctx: Dict[str, Any]) -> Tuple[bool, str]:
+        plan = ctx.get("plan")
+        metadata = getattr(plan, "metadata", None) or {}
+        got = metadata.get("intent")
+        if got == kind:
+            return True, f"intent {kind}"
+        return False, f"intent {got!r} != {kind!r}"
+
+    return _check
+
+
+def failed_honestly() -> CheckFn:
+    def _check(ctx: Dict[str, Any]) -> Tuple[bool, str]:
+        blob = (str(ctx.get("output") or "") + " " + str(ctx.get("error") or "")).lower()
+        if "mocked agentscope response content" in blob:
+            return False, "mock presented as success"
+        if ctx.get("plan_status") == "failed" and (
+            "unavailable" in blob or "no real operation" in blob or "not implemented" in blob
+        ):
+            return True, "honest failure"
+        return False, f"expected honest failure, status={ctx.get('plan_status')} output={ctx.get('output')!r}"
+
+    return _check
+
+
+def python_any_call(func: str, args: tuple, expected: Any) -> CheckFn:
+    def _check(ctx: Dict[str, Any]) -> Tuple[bool, str]:
+        import importlib.util
+        from pathlib import Path
+
+        matches = [
+            path
+            for path in Path(ctx["workspace"]).rglob("*.py")
+            if path.name != "test_module.py" and not path.name.startswith("test_")
+        ]
+        if not matches:
+            return False, "no python module found"
+        last_error = "function not found"
+        for path in matches:
+            spec = importlib.util.spec_from_file_location("bench_mod", path)
+            if spec is None or spec.loader is None:
+                continue
+            mod = importlib.util.module_from_spec(spec)
+            try:
+                spec.loader.exec_module(mod)
+            except Exception as exc:  # noqa: BLE001
+                last_error = str(exc)
+                continue
+            fn = getattr(mod, func, None)
+            if fn is None:
+                continue
+            got = fn(*args)
+            if got == expected:
+                return True, f"{path.name}:{func}{args} == {expected!r}"
+            last_error = f"{func}{args} == {got!r}, expected {expected!r}"
+        return False, last_error
+
+    return _check
+
+
 def denied() -> CheckFn:
     def _check(ctx: Dict[str, Any]) -> Tuple[bool, str]:
         blob = (str(ctx.get("output") or "") + " " + str(ctx.get("error") or "")).lower()
@@ -289,5 +360,175 @@ def build_cases() -> List[BenchmarkCase]:
             prompt="demo-cycle",
             path="evolution",
             checks=[],
+        ),
+    ]
+
+
+def build_open_ended_cases() -> List[BenchmarkCase]:
+    """Natural-language tasks without implementation cue phrases."""
+    return [
+        BenchmarkCase(
+            case_id="oe-note-desktop",
+            category="write-text",
+            prompt="Put a note on my desktop saying I need to call John.",
+            checks=[
+                used_intent("write_text"),
+                used_tool("write_file-v1"),
+                file_contains("note.txt", "I need to call John"),
+                not_mocked(),
+                plan_completed(),
+            ],
+        ),
+        BenchmarkCase(
+            case_id="oe-celsius-program",
+            category="build-program",
+            prompt="Make a small program that converts Celsius to Fahrenheit.",
+            checks=[
+                used_intent("build_program"),
+                used_tool("coding-engine-v1"),
+                python_any_call("celsius_to_fahrenheit", (0,), 32.0),
+                python_any_call("celsius_to_fahrenheit", (100,), 212.0),
+                not_mocked(),
+            ],
+        ),
+        BenchmarkCase(
+            case_id="oe-greeting-change",
+            category="change-program",
+            prompt="The greeting in the existing Python script should say Good evening.",
+            setup_files=[
+                (
+                    "greet.py",
+                    'GREETING = "Hello"\n\ndef greet():\n    return GREETING\n',
+                )
+            ],
+            checks=[
+                used_intent("change_program"),
+                used_tool("coding-engine-v1"),
+                file_contains("greet.py", "Good evening"),
+                not_mocked(),
+            ],
+        ),
+        BenchmarkCase(
+            case_id="oe-json-highest",
+            category="query-data",
+            prompt="Look at this JSON and tell me which user has the highest score.",
+            setup_files=[
+                (
+                    "players.json",
+                    '[{"user": "sam", "score": 10}, {"user": "ada", "score": 42}, {"user": "lee", "score": 7}]',
+                )
+            ],
+            checks=[
+                used_intent("query_data"),
+                used_tool("inspect_data-v1"),
+                output_contains("ada", "42"),
+                not_mocked(),
+                plan_completed(),
+            ],
+        ),
+        BenchmarkCase(
+            case_id="oe-reminder",
+            category="write-text",
+            prompt="Leave a reminder that the meeting moved to Thursday.",
+            checks=[
+                used_intent("write_text"),
+                used_tool("write_file-v1"),
+                file_contains("reminder.txt", "meeting moved to Thursday"),
+                not_mocked(),
+            ],
+        ),
+        BenchmarkCase(
+            case_id="oe-spoken-math",
+            category="compute",
+            prompt="What is 18 times 7?",
+            checks=[
+                used_intent("compute"),
+                used_tool("calculator-v1"),
+                output_contains("126"),
+                not_mocked(),
+                plan_completed(),
+            ],
+        ),
+        BenchmarkCase(
+            case_id="oe-jot",
+            category="write-text",
+            prompt="Jot down that the package arrives tomorrow.",
+            checks=[
+                used_intent("write_text"),
+                used_tool("write_file-v1"),
+                file_contains("note.txt", "package arrives tomorrow"),
+                not_mocked(),
+            ],
+        ),
+        BenchmarkCase(
+            case_id="oe-project-add",
+            category="build-program",
+            prompt="Make a tiny project that can add two numbers and prove it with tests.",
+            checks=[
+                used_intent("build_program"),
+                used_tool("coding-engine-v1"),
+                file_contains("pkg/core.py", "def add("),
+                python_any_call("add", (2, 3), 5),
+                not_mocked(),
+            ],
+        ),
+        BenchmarkCase(
+            case_id="oe-repair-failing",
+            category="change-program",
+            prompt="The existing tests are failing — repair the implementation.",
+            setup_files=[
+                ("module.py", "def add(a, b):\n    return a * b\n"),
+                ("test_module.py", "from module import add\n\ndef test_add():\n    assert add(2, 3) == 5\n"),
+            ],
+            checks=[
+                used_intent("change_program"),
+                used_tool("coding-engine-v1"),
+                python_call("module.py", "add", (2, 3), 5),
+                not_mocked(),
+            ],
+        ),
+        BenchmarkCase(
+            case_id="oe-division",
+            category="compute",
+            prompt="How much is 144 divided by 12?",
+            checks=[
+                used_intent("compute"),
+                used_tool("calculator-v1"),
+                output_contains("12"),
+                not_mocked(),
+            ],
+        ),
+        BenchmarkCase(
+            case_id="oe-show-json",
+            category="read-text",
+            prompt="What's inside roster.json?",
+            setup_files=[("roster.json", '{"team": "okapi", "n": 3}')],
+            checks=[
+                used_intent("read_text"),
+                used_tool("read_file-v1"),
+                output_contains("okapi"),
+                not_mocked(),
+            ],
+        ),
+        BenchmarkCase(
+            case_id="oe-larger",
+            category="build-program",
+            prompt="A program that reports the larger of two numbers, with tests.",
+            checks=[
+                used_intent("build_program"),
+                used_tool("coding-engine-v1"),
+                python_any_call("larger", (3, 1), 3),
+                not_mocked(),
+            ],
+        ),
+        BenchmarkCase(
+            case_id="oe-email-unavailable",
+            category="failure-reporting",
+            prompt="Email this report to the whole team.",
+            checks=[
+                used_intent("unsupported"),
+                failed_honestly(),
+                not_mocked(),
+            ],
         ),
     ]

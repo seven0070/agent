@@ -115,14 +115,13 @@ class RuleBasedPlanner:
             return match.group(1).strip()
         return "37 * 42"
 
-    def create_plan(self, goal: str, plan_id: Optional[str] = None) -> Plan:
+    def create_plan(self, goal: str, plan_id: Optional[str] = None, workspace_dir: Optional[str] = None) -> Plan:
         """
         Decomposes a user goal into a structured Plan graph with dependency relationships.
         """
         pid = plan_id or f"plan-{uuid.uuid4().hex[:8]}"
         tasks: Dict[str, PlanTask] = {}
 
-        goal_lower = goal.lower()
         strategy: Dict[str, Any] = {}
         try:
             from agent.evolution.generation import load_active_planner_strategy
@@ -130,10 +129,24 @@ class RuleBasedPlanner:
         except Exception:
             strategy = {}
         extra_retries = int((strategy.get("proposed_changes") or {}).get("strategy_patch", {}).get("max_retries") or 2)
-        has_math = bool(re.search(r"(\d+(?:\.\d+)?\s*[\+\-\*/]+\s*\d+(?:\.\d+)?)", goal))
 
-        # Goal Pattern 1: Coding / Software Engineering Task
-        if is_coding_goal(goal):
+        from agent.orchestration.intent import (
+            BUILD_PROGRAM,
+            CAPABILITY_UNAVAILABLE,
+            CHANGE_PROGRAM,
+            COMPUTE,
+            CONVERSE,
+            QUERY_DATA,
+            READ_TEXT,
+            WRITE_TEXT,
+            classify_intent,
+        )
+
+        intent = classify_intent(goal, workspace_dir=workspace_dir)
+        kind = intent.kind
+        slots = intent.slots
+
+        if kind in (BUILD_PROGRAM, CHANGE_PROGRAM):
             t1 = PlanTask(
                 id="task_code_1",
                 description="Execute coding task with Jcode engine",
@@ -144,10 +157,8 @@ class RuleBasedPlanner:
             )
             tasks[t1.id] = t1
 
-        # Goal Pattern 1b: explicit file read (including safety / traversal probes)
-        elif any(keyword in goal_lower for keyword in ["read file", "open file", "cat ", "passwd"]):
-            path_match = re.search(r"((?:\.\./)+[\w./-]+|/[\w./-]+|[\w./-]+\.\w+)", goal)
-            rel_path = path_match.group(1) if path_match else goal.strip()
+        elif kind == READ_TEXT:
+            rel_path = slots.get("filename") or goal.strip()
             t1 = PlanTask(
                 id="task_read_1",
                 description="Read workspace file",
@@ -158,61 +169,31 @@ class RuleBasedPlanner:
             )
             tasks[t1.id] = t1
 
-        # Goal Pattern 2: Math calculation + write to file
-        elif has_math and ("file" in goal_lower or "save" in goal_lower or "write" in goal_lower or "report" in goal_lower):
-            expr = self._extract_expression(goal)
-            target_name = extract_filename(goal) or "calc_result.txt"
-
-            t1 = PlanTask(
-                id="task_calc_1",
-                description="Evaluate mathematical calculation",
-                dependencies=[],
-                required_tool_id="calculator-v1",
-                inputs={"expression": expr},
-                max_retries=extra_retries,
-            )
-            t2 = PlanTask(
-                id="task_write_2",
-                description="Write calculation result to workspace file",
-                dependencies=["task_calc_1"],
-                required_tool_id="write_file-v1",
-                inputs={"relative_path": target_name, "content": "$task_calc_1.output"},
-                max_retries=extra_retries,
-            )
-            tasks[t1.id] = t1
-            tasks[t2.id] = t2
-
-        # Goal Pattern 3: Workspace file create/write/edit (not coding, not calc)
-        elif is_file_write_goal(goal):
-            ops = extract_file_write_ops(goal)
-            if not ops:
+        elif kind == QUERY_DATA:
+            rel_path = slots.get("filename")
+            if not rel_path:
                 t1 = PlanTask(
-                    id="task_gen_1",
-                    description=f"Process goal: {goal}",
+                    id="task_unavailable_1",
+                    description="Structured data file is required but was not found",
                     dependencies=[],
-                    required_tool_id=None,
-                    inputs={"prompt": goal},
+                    required_tool_id=CAPABILITY_UNAVAILABLE,
+                    inputs={"goal": goal},
+                    max_retries=0,
                 )
                 tasks[t1.id] = t1
             else:
-                prev = None
-                for index, (target_name, content) in enumerate(ops, start=1):
-                    tid = f"task_write_{index}"
-                    t = PlanTask(
-                        id=tid,
-                        description="Write requested content to a workspace file",
-                        dependencies=[prev] if prev else [],
-                        required_tool_id="write_file-v1",
-                        inputs={"relative_path": target_name, "content": content},
-                        max_retries=extra_retries,
-                    )
-                    tasks[tid] = t
-                    prev = tid
+                t1 = PlanTask(
+                    id="task_inspect_1",
+                    description="Inspect structured workspace data",
+                    dependencies=[],
+                    required_tool_id="inspect_data-v1",
+                    inputs={"relative_path": rel_path, "query": slots.get("query") or goal},
+                    max_retries=extra_retries,
+                )
+                tasks[t1.id] = t1
 
-        # Goal Pattern 4: Math calculation only
-        elif "calculate" in goal_lower or "math" in goal_lower or "compute" in goal_lower or has_math:
-            expr = self._extract_expression(goal)
-
+        elif kind == COMPUTE:
+            expr = slots.get("expression") or self._extract_expression(goal)
             t1 = PlanTask(
                 id="task_calc_1",
                 description="Evaluate mathematical calculation",
@@ -222,9 +203,39 @@ class RuleBasedPlanner:
                 max_retries=extra_retries,
             )
             tasks[t1.id] = t1
+            save_as = slots.get("save_as")
+            if save_as:
+                t2 = PlanTask(
+                    id="task_write_2",
+                    description="Write calculation result to workspace file",
+                    dependencies=["task_calc_1"],
+                    required_tool_id="write_file-v1",
+                    inputs={"relative_path": save_as, "content": "$task_calc_1.output"},
+                    max_retries=extra_retries,
+                )
+                tasks[t2.id] = t2
 
-        # Goal Pattern 5: Default single-step general task (model path)
-        else:
+        elif kind == WRITE_TEXT:
+            ops = extract_file_write_ops(goal)
+            if not ops:
+                target_name = slots.get("filename") or "note.txt"
+                content = slots.get("content") or extract_file_content(goal)
+                ops = [(target_name, content)]
+            prev = None
+            for index, (target_name, content) in enumerate(ops, start=1):
+                tid = f"task_write_{index}"
+                t = PlanTask(
+                    id=tid,
+                    description="Write requested content to a workspace file",
+                    dependencies=[prev] if prev else [],
+                    required_tool_id="write_file-v1",
+                    inputs={"relative_path": target_name, "content": content},
+                    max_retries=extra_retries,
+                )
+                tasks[tid] = t
+                prev = tid
+
+        elif kind == CONVERSE:
             t1 = PlanTask(
                 id="task_gen_1",
                 description=f"Process goal: {goal}",
@@ -234,10 +245,22 @@ class RuleBasedPlanner:
             )
             tasks[t1.id] = t1
 
+        else:
+            t1 = PlanTask(
+                id="task_unavailable_1",
+                description="Requested capability is not available",
+                dependencies=[],
+                required_tool_id=CAPABILITY_UNAVAILABLE,
+                inputs={"goal": goal},
+                max_retries=0,
+            )
+            tasks[t1.id] = t1
+
         return Plan(
             id=pid,
             goal=goal,
             version="plan-v1",
             tasks=tasks,
             status="active",
+            metadata={"intent": kind, "intent_confidence": intent.confidence},
         )

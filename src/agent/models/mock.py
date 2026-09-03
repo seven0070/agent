@@ -9,8 +9,10 @@ from agentscope.formatter import OpenAIChatFormatter
 
 class MockChatModel(ChatModelBase):
     """
-    Deterministic Mock Chat Model inheriting from AgentScope's ChatModelBase.
-    Used for unit/integration tests and environments without live cloud credentials.
+    Deterministic conversational mock for tests and offline development.
+
+    It must not be used as a silent success path for tasks that require a real
+    filesystem, coding, calculator, or data-inspection capability.
     """
 
     def __init__(self, mock_response: str = "Mocked AgentScope response content", model_name: str = "mock-model-v1"):

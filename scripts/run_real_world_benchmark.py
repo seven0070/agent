@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT))
 
-from tests.benchmark.cases import BenchmarkCase, build_cases  # noqa: E402
+from tests.benchmark.cases import BenchmarkCase, build_cases, build_open_ended_cases  # noqa: E402
 
 
 def _seed(workspace: Path, files: list[tuple[str, str]]) -> None:
@@ -59,7 +59,7 @@ def run_core(case: BenchmarkCase) -> Dict[str, Any]:
     planner = RuleBasedPlanner()
     orchestrator = PlanOrchestrator(broker=broker)
     started = time.perf_counter()
-    plan = planner.create_plan(case.prompt)
+    plan = planner.create_plan(case.prompt, workspace_dir=str(sandbox_ws))
     completed = orchestrator.execute_plan(plan)
     elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
     retries = sum(t.retry_count for t in completed.tasks.values())
@@ -230,8 +230,7 @@ def evaluate_case(case: BenchmarkCase, ctx: Dict[str, Any]) -> Dict[str, Any]:
     return {"passed": passed, "checks": check_results}
 
 
-def main() -> int:
-    cases = build_cases()
+def _run_suite(name: str, cases: List[BenchmarkCase]) -> Dict[str, Any]:
     rows: List[Dict[str, Any]] = []
     for case in cases:
         started = time.perf_counter()
@@ -278,8 +277,8 @@ def main() -> int:
 
     passed = sum(1 for r in rows if r["passed"])
     total = len(rows)
-    print("=== REAL-WORLD BENCHMARK ===")
-    print(f"score {passed}/{total} ({(passed / total * 100):.1f}%)")
+    print(f"=== {name.upper()} BENCHMARK ===")
+    print(f"score {passed}/{total} ({(passed / total * 100) if total else 0:.1f}%)")
     print("")
     print(f"{'ID':<28} {'CAT':<22} {'RES':<6} {'MS':>8} {'RETRY':>5}  FAIL")
     for row in rows:
@@ -293,13 +292,36 @@ def main() -> int:
         key = row["category"]
         categories[key] = categories.get(key, 0) + 1
     print("\nFailure categories:")
-    for name, count in sorted(categories.items(), key=lambda kv: -kv[1]):
-        print(f"  {name}: {count}")
+    if not categories:
+        print("  none")
+    for cat_name, count in sorted(categories.items(), key=lambda kv: -kv[1]):
+        print(f"  {cat_name}: {count}")
+    print("")
+    return {"name": name, "passed": passed, "total": total, "rows": rows}
 
+
+def main() -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Run Agent real-world benchmarks")
+    parser.add_argument(
+        "--suite",
+        choices=["core", "open-ended", "all"],
+        default="all",
+        help="Which benchmark suite to run (default: all)",
+    )
+    args = parser.parse_args()
+    suites = []
+    if args.suite in ("core", "all"):
+        suites.append(("real-world", build_cases()))
+    if args.suite in ("open-ended", "all"):
+        suites.append(("open-ended", build_open_ended_cases()))
+
+    reports = [_run_suite(name, cases) for name, cases in suites]
     report_path = ROOT / "tests" / "benchmark" / "last_report.json"
-    report_path.write_text(json.dumps({"passed": passed, "total": total, "rows": rows}, indent=2), encoding="utf-8")
-    print(f"\nWrote {report_path}")
-    return 0 if passed == total else 1
+    report_path.write_text(json.dumps({"suites": reports}, indent=2), encoding="utf-8")
+    print(f"Wrote {report_path}")
+    return 0 if all(item["passed"] == item["total"] for item in reports) else 1
 
 
 if __name__ == "__main__":
