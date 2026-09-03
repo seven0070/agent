@@ -5,6 +5,11 @@ description = "Sovereign Agent OS Local Desktop Application"
 authors = ["Sovereign Team"]
 edition = "2021"
 
+# Isolate this crate from any parent Cargo workspace (e.g. a home-directory
+# Cargo.toml). Without this, `cargo metadata` walks up and the Tauri build
+# fails before compilation starts.
+[workspace]
+
 [build-dependencies]
 tauri-build = { version = "2.0.0", features = [] }
 

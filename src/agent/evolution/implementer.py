@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 import uuid
 from typing import Dict, Optional
 
@@ -108,12 +107,10 @@ class EvolutionImplementer:
             limits=ResourceLimits(timeout_seconds=20.0, max_output_bytes=65536),
         )
         sandbox = RuntimeSandbox(session=sandbox_session)
-        test_path = sandbox.resolve_and_validate_path(test_rel)
-        proc = sandbox.execute_process(
-            cmd=[sys.executable, "-m", "pytest", test_path, "-q"],
-            cwd=".",
-            env={**os.environ, "PYTHONPATH": workspace},
-        )
+        sandbox.resolve_and_validate_path(test_rel)
+        from agent.runtime.pytest_runner import run_workspace_tests
+
+        proc = run_workspace_tests(workspace, test_target=test_rel, timeout_seconds=20.0)
         result.metadata = {
             **(result.metadata or {}),
             "sandbox_exit_code": proc.get("exit_code"),

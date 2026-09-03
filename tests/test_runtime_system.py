@@ -117,3 +117,20 @@ def test_broker_and_jcode_runtime_integration() -> None:
         assert completed_plan.status == "completed"
         assert completed_plan.tasks["task_code_1"].status == TaskState.SUCCEEDED
         assert len(broker.sandbox.events) > 0
+
+
+def test_stdlib_workspace_test_runner_pass_and_fail() -> None:
+    """Frozen sidecars run tests in-process instead of spawning the backend as Python."""
+    from agent.runtime.pytest_runner import _run_stdlib_tests
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        with open(os.path.join(tmp_dir, "test_ok.py"), "w", encoding="utf-8") as handle:
+            handle.write("def test_ok():\n    assert 1 == 1\n")
+        ok = _run_stdlib_tests(tmp_dir, "test_ok.py")
+        assert ok["success"] is True
+
+        with open(os.path.join(tmp_dir, "test_bad.py"), "w", encoding="utf-8") as handle:
+            handle.write("def test_bad():\n    assert 1 == 2\n")
+        bad = _run_stdlib_tests(tmp_dir, "test_bad.py")
+        assert bad["success"] is False
+        assert "test_bad" in bad["stderr"]

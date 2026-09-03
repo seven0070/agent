@@ -145,7 +145,19 @@ impl BackendSupervisor {
         if let Ok(mut guard) = self.process.lock() {
             if let Some(mut child) = guard.take() {
                 println!("[Desktop Shell Supervisor] Terminating Agent backend sidecar process...");
-                let _ = child.kill();
+                let pid = child.id();
+                // PyInstaller --onefile spawns a grandchild interpreter. Killing
+                // only the bootloader leaves the API process bound to :8000.
+                #[cfg(windows)]
+                {
+                    let _ = Command::new("taskkill")
+                        .args(["/PID", &pid.to_string(), "/T", "/F"])
+                        .status();
+                }
+                #[cfg(not(windows))]
+                {
+                    let _ = child.kill();
+                }
                 let _ = child.wait();
             }
         }

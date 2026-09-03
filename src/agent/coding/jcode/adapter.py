@@ -5,7 +5,6 @@ Manages session lifecycle, workspace file operations, test execution, permission
 
 import time
 import os
-import subprocess
 import uuid
 from typing import List, Optional, Dict, Any
 from agent.coding.interface import CodingEngineInterface
@@ -113,27 +112,12 @@ class JcodeAdapter(CodingEngineInterface):
 
             if task.test_command:
                 self._emit_event("tool_started", session_id, task.task_id, {"action": "run_tests", "command": task.test_command})
-                from agent.runtime.models import NetworkPolicy, RuntimeSession
-                from agent.runtime.policy import ResourceLimits
-                from agent.runtime.sandbox import RuntimeSandbox
-                import sys as _sys
+                from agent.runtime.pytest_runner import run_workspace_tests
 
-                sandbox = RuntimeSandbox(
-                    session=RuntimeSession(
-                        session_id=f"jcode-run-{session_id}",
-                        workspace_id=session_id,
-                        workspace_dir=workspace_root,
-                        network_policy=NetworkPolicy.DENY,
-                        limits=ResourceLimits(timeout_seconds=30.0, max_output_bytes=65536),
-                    )
-                )
-                if task.test_command == "pytest":
-                    cmd = [_sys.executable, "-m", "pytest", "-q"]
-                    if os.path.isfile(os.path.join(workspace_root, "test_math_module.py")):
-                        cmd.append("test_math_module.py")
-                else:
-                    cmd = [task.test_command]
-                proc = sandbox.execute_process(cmd=cmd, cwd=".", env={**os.environ, "PYTHONPATH": workspace_root})
+                test_file = None
+                if os.path.isfile(os.path.join(workspace_root, "test_math_module.py")):
+                    test_file = "test_math_module.py"
+                proc = run_workspace_tests(workspace_root, test_target=test_file)
                 tests_run = 1
                 if proc.get("success"):
                     tests_passed = 1

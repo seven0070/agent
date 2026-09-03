@@ -22,6 +22,11 @@ def main() -> int:
         errors.append("Development Python fallback is not isolated behind debug_assertions")
     if "resolve_packaged_sidecar" not in main_rs:
         errors.append("Packaged sidecar resolver missing from main.rs")
+    if "taskkill" not in main_rs:
+        errors.append("Windows sidecar shutdown must kill the PyInstaller process tree (taskkill /T)")
+    cargo_toml = (ROOT / "src-tauri" / "Cargo.toml").read_text(encoding="utf-8")
+    if "[workspace]" not in cargo_toml:
+        errors.append("src-tauri/Cargo.toml must declare [workspace] so parent Cargo.toml files cannot hijack the build")
     if re.search(r'Command::new\("python3?"\)', main_rs) and "not(debug_assertions)" in main_rs.split("Command::new(\"python\")")[-1][:200]:
         errors.append("Release spawn path still uses Python")
 
