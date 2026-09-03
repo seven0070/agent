@@ -59,8 +59,8 @@ def main() -> int:
     if "--bundles" not in workflow:
         errors.append("CI must pass platform-specific --bundles (msi/nsis vs deb/appimage)")
     before_build = conf.get("build", {}).get("beforeBuildCommand") or ""
-    if "npm --prefix ui run build" not in before_build:
-        errors.append("beforeBuildCommand must be 'npm --prefix ui run build' for repository-root Tauri cwd")
+    if "npm --prefix ../ui run build" not in before_build:
+        errors.append("beforeBuildCommand must be 'npm --prefix ../ui run build' because Tauri runs hooks from src-tauri/")
     if "PYTHONUTF8" not in workflow:
         errors.append("CI test job must set PYTHONUTF8 for Windows cp1252 consoles")
     if "Packaged Runtime Smoke (Windows)" not in workflow:
