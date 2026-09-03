@@ -37,6 +37,15 @@ def main() -> int:
         path = ROOT / "src-tauri" / icon
         if not path.exists():
             errors.append(f"Missing icon {icon}")
+            continue
+        if path.suffix.lower() == ".png":
+            data = path.read_bytes()
+            if len(data) < 26 or data[:8] != b"\x89PNG\r\n\x1a\n":
+                errors.append(f"{icon} is not a valid PNG")
+            elif data[25] != 6:
+                errors.append(
+                    f"{icon} must be RGBA (PNG color type 6); Tauri generate_context rejects RGB"
+                )
 
     if not (ROOT / "src-tauri" / "build.rs").exists():
         errors.append("Missing src-tauri/build.rs")
