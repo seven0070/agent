@@ -124,7 +124,18 @@ class AgentScopeAdapter:
         workspace_dir = None
         if getattr(self.broker, "workspace_manager", None) is not None:
             workspace_dir = self.broker.workspace_manager.workspace_dir
-        plan = self.planner.create_plan(goal=task.prompt, workspace_dir=workspace_dir)
+        session_hints: Dict[str, Any] = {}
+        if task.session_id and self.context_builder.session_manager:
+            history = self.context_builder.session_manager.get_session_history(task.session_id, limit=12)
+            for item in reversed(history):
+                if item.source in {"agent", "assistant"} and (item.content or "").strip():
+                    session_hints["last_output"] = item.content
+                    break
+        plan = self.planner.create_plan(
+            goal=task.prompt,
+            workspace_dir=workspace_dir,
+            session_hints=session_hints or None,
+        )
         self.last_plan = plan
         tools_used: list[str] = []
         files_changed: list[str] = []

@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 
 WRITE_TEXT = "write_text"
 READ_TEXT = "read_text"
+READ_THEN_WRITE = "read_then_write"
 COMPUTE = "compute"
 BUILD_PROGRAM = "build_program"
 CHANGE_PROGRAM = "change_program"
@@ -24,7 +25,12 @@ UNSUPPORTED = "unsupported"
 
 CAPABILITY_UNAVAILABLE = "capability-unavailable"
 
-_ARITH_TOKEN = r"(\d+(?:\.\d+)?\s*[\+\-\*/]+\s*\d+(?:\.\d+)?)"
+# Hyphen glued to digits (ticket-14-1788, 3-4pm) is not subtraction. Require
+# spaces around '-' or a non-hyphen operator.
+_ARITH_TOKEN = (
+    r"(\d+(?:\.\d+)?\s*[\+\*/]\s*\d+(?:\.\d+)?|"
+    r"\d+(?:\.\d+)?\s+-\s+\d+(?:\.\d+)?)"
+)
 _FILENAME = r"[A-Za-z0-9][A-Za-z0-9._-]*\.[A-Za-z0-9]+"
 _WORK_HINT = re.compile(
     r"\b(email|e-mail|send|download|install|deploy|browse|tweet|slack|sms|purchase|buy|pay|"
@@ -61,6 +67,8 @@ def _safe_filename(name: Optional[str]) -> Optional[str]:
 def _extract_spoken_content(goal: str) -> str:
     patterns = (
         r"(?:saying|that says|that reads)\s+(.+)$",
+        r"to say\s+(.+)$",
+        r"remind me(?:\s+to)?\s+(.+)$",
         r"(?:note|reminder|memo|message)\s+(?:on\s+\S+\s+)?(?:that\s+|to\s+)?(.+)$",
         r"jot down\s+(?:that\s+)?(.+)$",
         r"[\"'](.+?)[\"']",
@@ -76,7 +84,7 @@ def _extract_spoken_content(goal: str) -> str:
 
 def _artifact_filename(goal: str) -> str:
     lower = goal.lower()
-    if "reminder" in lower:
+    if "remind" in lower or "reminder" in lower:
         return "reminder.txt"
     if "memo" in lower:
         return "memo.txt"
@@ -140,7 +148,8 @@ def _data_query_outcome(lower: str, names: List[str]) -> bool:
     mentions_data = bool(re.search(r"\b(json|csv)\b", lower)) or has_data
     aggregating = bool(
         re.search(
-            r"\b(highest|lowest|which|who has|max|min|largest|smallest|average|mean|how many|count)\b",
+            r"\b(highest|lowest|which|who has|max|min|largest|smallest|average|mean|"
+            r"how many|count|total|sum|summarize|summary)\b",
             lower,
         )
     )
@@ -148,11 +157,11 @@ def _data_query_outcome(lower: str, names: List[str]) -> bool:
 
 
 def _persist_outcome(lower: str, filename_in_goal: bool) -> bool:
-    if re.search(r"\bjot down\b", lower):
+    if re.search(r"\bjot down\b", lower) or re.search(r"\bremind me\b", lower):
         return True
     write_verb = bool(
         re.search(
-            r"\b(put|leave|jot|drop|save|pin|write|create|make|edit|replace|update|overwrite)\b",
+            r"\b(put|leave|jot|drop|save|pin|write|create|make|edit|replace|update|overwrite|change)\b",
             lower,
         )
     )
@@ -184,6 +193,30 @@ def _first_data_file(names: List[str]) -> Optional[str]:
     return None
 
 
+def _explicit_calculation(lower: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(calculate|what is|what's|whats|how much is|times|multiplied|divided by|plus|minus)\b",
+            lower,
+        )
+    )
+
+
+def _read_then_write_pair(goal: str, lower: str) -> Optional[tuple]:
+    files = re.findall(_FILENAME, goal)
+    unique = []
+    for name in files:
+        if name not in unique:
+            unique.append(name)
+    if len(unique) < 2:
+        return None
+    if not re.search(r"\b(read|look at|open|what's in|whats in|what's inside)\b", lower):
+        return None
+    if not re.search(r"\b(write|save|put|copy)\b", lower):
+        return None
+    return unique[0], unique[-1]
+
+
 def classify_intent(goal: str, workspace_dir: Optional[str] = None) -> Intent:
     """Map the user's requested outcome onto an implemented capability."""
     text = goal.strip()
@@ -196,7 +229,16 @@ def classify_intent(goal: str, workspace_dir: Optional[str] = None) -> Intent:
 
     from agent.orchestration.planner import extract_file_content, extract_filename
 
-    if math and not software:
+    pair = _read_then_write_pair(text, lower)
+    if pair:
+        return Intent(
+            kind=READ_THEN_WRITE,
+            confidence=3.0,
+            slots={"source": pair[0], "dest": pair[1]},
+        )
+
+    persist = _persist_outcome(lower, filename_in_goal)
+    if math and not software and not (persist and not _explicit_calculation(lower)):
         slots: Dict[str, Any] = {"expression": math}
         save_name = _safe_filename(extract_filename(text))
         if save_name or re.search(r"\b(save|write|report)\b", lower):
@@ -222,7 +264,7 @@ def classify_intent(goal: str, workspace_dir: Optional[str] = None) -> Intent:
             slots={"filename": named or _first_data_file(names), "query": text},
         )
 
-    if _persist_outcome(lower, filename_in_goal):
+    if persist:
         named = _safe_filename(extract_filename(text)) or (
             _safe_filename(filename_match.group(0)) if filename_match else None
         )

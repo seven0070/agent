@@ -300,6 +300,40 @@ def test_jcode_larger_of_two_without_named_function() -> None:
         assert ns["larger"](3, 1) == 3
 
 
+def test_jcode_single_catalog_function_square() -> None:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        adapter = JcodeAdapter(workspace_dir=tmp_dir)
+        result = adapter.execute_coding_task(
+            CodingTask(
+                task_id="ct-square",
+                goal="Create a python function square with tests.",
+                workspace_dir=tmp_dir,
+                test_command="pytest",
+            )
+        )
+        assert result.status == "success"
+        ns: dict = {}
+        exec(open(os.path.join(tmp_dir, "module.py"), encoding="utf-8").read(), ns)
+        assert ns["square"](3) == 9
+
+
+def test_jcode_factorial_from_named_function() -> None:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        adapter = JcodeAdapter(workspace_dir=tmp_dir)
+        result = adapter.execute_coding_task(
+            CodingTask(
+                task_id="ct-fact",
+                goal="Create a python function factorial with tests.",
+                workspace_dir=tmp_dir,
+                test_command="pytest",
+            )
+        )
+        assert result.status == "success"
+        ns: dict = {}
+        exec(open(os.path.join(tmp_dir, "module.py"), encoding="utf-8").read(), ns)
+        assert ns["factorial"](5) == 120
+
+
 def test_jcode_unknown_named_functions_fail_closed_not_identity_stubs() -> None:
     with tempfile.TemporaryDirectory() as tmp_dir:
         adapter = JcodeAdapter(workspace_dir=tmp_dir)

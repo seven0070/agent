@@ -16,7 +16,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT))
 
-from tests.benchmark.cases import BenchmarkCase, build_cases, build_open_ended_cases  # noqa: E402
+from tests.benchmark.cases import (  # noqa: E402
+    BenchmarkCase,
+    build_capability_cases,
+    build_cases,
+    build_open_ended_cases,
+)
 
 
 def _seed(workspace: Path, files: list[tuple[str, str]]) -> None:
@@ -113,6 +118,8 @@ def run_pipeline(case: BenchmarkCase) -> Dict[str, Any]:
     pipeline = AgentPipeline(adapter=adapter, evolution=evolution, broker=broker)
     started = time.perf_counter()
     outcome = asyncio.run(pipeline.execute(session_id="bench-session", prompt=case.prompt))
+    if case.follow_up:
+        outcome = asyncio.run(pipeline.execute(session_id="bench-session", prompt=case.follow_up))
     elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
     plan = outcome.get("plan")
     result = outcome.get("result")
@@ -306,7 +313,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run Agent real-world benchmarks")
     parser.add_argument(
         "--suite",
-        choices=["core", "open-ended", "all"],
+        choices=["core", "open-ended", "capability", "all"],
         default="all",
         help="Which benchmark suite to run (default: all)",
     )
@@ -316,6 +323,8 @@ def main() -> int:
         suites.append(("real-world", build_cases()))
     if args.suite in ("open-ended", "all"):
         suites.append(("open-ended", build_open_ended_cases()))
+    if args.suite in ("capability", "all"):
+        suites.append(("capability", build_capability_cases()))
 
     reports = [_run_suite(name, cases) for name, cases in suites]
     report_path = ROOT / "tests" / "benchmark" / "last_report.json"

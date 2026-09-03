@@ -116,8 +116,17 @@ def extract_function_names(goal: str) -> List[str]:
                 names.append(ident)
 
     if not names:
+        single = re.search(r"\bfunction(?:s)?\s+(?:called\s+|named\s+)?([a-z][a-z0-9_]*)\b", lower)
+        if single:
+            ident = _ident(single.group(1))
+            if ident:
+                names.append(ident)
+
+    if not names:
         for token in re.findall(r"\b[a-z][a-z0-9_]*\b", lower):
             mapped = _ALIASES.get(token)
+            if mapped is None and _spec_for_name(token) is not None and token not in _STOPWORDS:
+                mapped = token
             if mapped and mapped not in names:
                 names.append(mapped)
     return names
@@ -139,6 +148,12 @@ def _spec_for_name(name: str) -> Optional[FunctionSpec]:
         "abs_value": FunctionSpec("abs_value", "value", "return abs(value)", [((-3,), 3), ((4,), 4)]),
         "abs": FunctionSpec("abs_value", "value", "return abs(value)", [((-3,), 3), ((4,), 4)]),
         "square": FunctionSpec("square", "value", "return value * value", [((3,), 9), ((4,), 16)]),
+        "factorial": FunctionSpec(
+            "factorial",
+            "n",
+            "return 1 if n <= 1 else n * factorial(n - 1)",
+            [((0,), 1), ((5,), 120)],
+        ),
         "double": FunctionSpec("double", "value", "return value * 2", [((3,), 6), ((4,), 8)]),
         "negate": FunctionSpec("negate", "value", "return -value", [((3,), -3), ((-2,), 2)]),
         "clamp": FunctionSpec("clamp", "value, lo, hi", "return max(lo, min(hi, value))", [((5, 0, 10), 5), ((-1, 0, 10), 0)]),

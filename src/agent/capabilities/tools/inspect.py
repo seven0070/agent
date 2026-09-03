@@ -72,9 +72,11 @@ def inspect_structured_data(raw: str, query: str) -> str:
     lower = query.lower()
     want_count = bool(re.search(r"\b(how many|count|number of)\b", lower))
     want_avg = bool(re.search(r"\b(average|mean)\b", lower))
+    want_sum = bool(re.search(r"\b(total|sum)\b", lower))
+    want_summary = bool(re.search(r"\b(summarize|summary)\b", lower))
     want_max = bool(re.search(r"\b(highest|max|largest|most|top)\b", lower))
     want_min = bool(re.search(r"\b(lowest|min|smallest|least|bottom)\b", lower))
-    if want_count and not (want_avg or want_max or want_min):
+    if want_count and not (want_avg or want_max or want_min or want_sum or want_summary):
         return f"{len(records)} records."
 
     fields = _numeric_fields(records)
@@ -91,6 +93,24 @@ def inspect_structured_data(raw: str, query: str) -> str:
         avg = sum(value for _, value in scored) / len(scored)
         rendered = avg if avg != int(avg) else int(avg)
         return f"The average {field} is {rendered}."
+
+    if want_sum and not (want_max or want_min):
+        total = sum(value for _, value in scored)
+        rendered = total if total != int(total) else int(total)
+        return f"The total {field} is {rendered}."
+
+    if want_summary and not (want_max or want_min or want_avg):
+        total = sum(value for _, value in scored)
+        avg = total / len(scored)
+        winner, value = max(scored, key=lambda item: item[1])
+        identity = next((v for k, v in winner.items() if k != field), winner)
+        avg_r = avg if avg != int(avg) else int(avg)
+        tot_r = total if total != int(total) else int(total)
+        val_r = value if value != int(value) else int(value)
+        return (
+            f"{len(records)} records. Total {field} {tot_r}. "
+            f"Average {field} {avg_r}. Highest {field} {identity} ({val_r})."
+        )
 
     if want_min and not want_max:
         winner, value = min(scored, key=lambda item: item[1])

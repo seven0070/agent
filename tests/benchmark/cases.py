@@ -17,6 +17,7 @@ class BenchmarkCase:
     setup_files: List[Tuple[str, str]] = field(default_factory=list)
     checks: List[CheckFn] = field(default_factory=list)
     path: str = "core"  # core | pipeline | evolution
+    follow_up: Optional[str] = None
 
 
 def file_equals(rel: str, expected: str) -> CheckFn:
@@ -574,5 +575,140 @@ def build_open_ended_cases() -> List[BenchmarkCase]:
                 failed_honestly(),
                 not_mocked(),
             ],
+        ),
+    ]
+
+
+def unused_tool(tool_id: str) -> CheckFn:
+    def _check(ctx: Dict[str, Any]) -> Tuple[bool, str]:
+        tools = ctx.get("tools") or []
+        if tool_id not in tools:
+            return True, f"did not use {tool_id}"
+        return False, f"unexpected {tool_id} in {tools}"
+
+    return _check
+
+
+def build_capability_cases() -> List[BenchmarkCase]:
+    """Harder real-world capability cases measured against the live agent."""
+    players = '[{"user": "sam", "score": 10}, {"user": "ada", "score": 42}, {"user": "lee", "score": 8}]'
+    return [
+        BenchmarkCase(
+            case_id="cap-read-then-write",
+            category="multi-step",
+            prompt="Read info.txt and write what you found into summary.txt",
+            setup_files=[("info.txt", "alpha-secret")],
+            checks=[
+                used_tool("read_file-v1"),
+                used_tool("write_file-v1"),
+                file_contains("summary.txt", "alpha-secret"),
+                plan_completed(),
+            ],
+        ),
+        BenchmarkCase(
+            case_id="cap-calc-save-named",
+            category="tool-chaining",
+            prompt="What is 9 times 8? Write the answer in result.txt",
+            checks=[
+                used_tool("calculator-v1"),
+                used_tool("write_file-v1"),
+                file_contains("result.txt", "72"),
+                plan_completed(),
+            ],
+        ),
+        BenchmarkCase(
+            case_id="cap-numeric-note",
+            category="ambiguous-nl",
+            prompt="Put a note on my desktop saying the code is ticket-14-1788.",
+            checks=[
+                used_intent("write_text"),
+                used_tool("write_file-v1"),
+                unused_tool("calculator-v1"),
+                file_contains("note.txt", "ticket-14-1788"),
+                plan_completed(),
+            ],
+        ),
+        BenchmarkCase(
+            case_id="cap-time-range-note",
+            category="ambiguous-nl",
+            prompt="Jot down that the meeting is 3-4pm",
+            checks=[
+                used_intent("write_text"),
+                unused_tool("calculator-v1"),
+                file_contains("note.txt", "3-4pm"),
+            ],
+        ),
+        BenchmarkCase(
+            case_id="cap-remind-me",
+            category="ambiguous-nl",
+            prompt="Remind me to buy milk",
+            checks=[
+                used_tool("write_file-v1"),
+                file_contains("reminder.txt", "buy milk"),
+            ],
+        ),
+        BenchmarkCase(
+            case_id="cap-change-file",
+            category="filesystem",
+            prompt="Change note.txt to say goodbye",
+            setup_files=[("note.txt", "hello")],
+            checks=[file_equals("note.txt", "goodbye"), used_tool("write_file-v1")],
+        ),
+        BenchmarkCase(
+            case_id="cap-multi-file-natural",
+            category="multi-file",
+            prompt="Create readme.txt containing Hello world and license.txt containing MIT",
+            checks=[
+                file_contains("readme.txt", "Hello world"),
+                file_contains("license.txt", "MIT"),
+            ],
+        ),
+        BenchmarkCase(
+            case_id="cap-square",
+            category="coding",
+            prompt="Create a python function square with tests.",
+            checks=[used_tool("coding-engine-v1"), python_call("module.py", "square", (3,), 9)],
+        ),
+        BenchmarkCase(
+            case_id="cap-factorial",
+            category="coding",
+            prompt="Create a python function factorial with tests.",
+            checks=[used_tool("coding-engine-v1"), python_call("module.py", "factorial", (5,), 120)],
+        ),
+        BenchmarkCase(
+            case_id="cap-data-sum",
+            category="data-analysis",
+            prompt="What is the total of the scores in players.json?",
+            setup_files=[("players.json", players)],
+            checks=[used_tool("inspect_data-v1"), output_contains("60")],
+        ),
+        BenchmarkCase(
+            case_id="cap-summarize-local",
+            category="research-style",
+            prompt="Summarize this JSON for me.",
+            setup_files=[("players.json", players)],
+            checks=[used_tool("inspect_data-v1"), unused_tool("capability-unavailable"), plan_completed()],
+        ),
+        BenchmarkCase(
+            case_id="cap-session-follow-up",
+            category="session-continuity",
+            prompt="Calculate 15 + 27",
+            follow_up="Write that result to memory.txt",
+            path="pipeline",
+            checks=[file_contains("memory.txt", "42"), used_tool("write_file-v1")],
+        ),
+        BenchmarkCase(
+            case_id="cap-web-unsupported",
+            category="unsupported",
+            prompt="Search the web for today's weather in Paris.",
+            path="pipeline",
+            checks=[failed_honestly(), not_mocked()],
+        ),
+        BenchmarkCase(
+            case_id="cap-delete-keeps-file",
+            category="security",
+            prompt="Delete note.txt from the workspace",
+            setup_files=[("note.txt", "keep-me")],
+            checks=[file_equals("note.txt", "keep-me")],
         ),
     ]

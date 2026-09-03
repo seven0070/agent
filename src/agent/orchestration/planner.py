@@ -12,7 +12,7 @@ _FILENAME_TOKEN = r"[A-Za-z0-9][A-Za-z0-9._-]*\.[A-Za-z0-9]+"
 _FILENAME_PATTERNS = (
     rf"(?:named|called)\s+[\"']?({_FILENAME_TOKEN})[\"']?",
     rf"(?:file(?:name)?)\s+[\"']?({_FILENAME_TOKEN})[\"']?",
-    rf"(?:save|write|output)\s+(?:it\s+)?(?:to|into)\s+[\"']?({_FILENAME_TOKEN})[\"']?",
+    rf"(?:save|write|output)\s+(?:(?:it|the\s+answer|the\s+result)\s+)?(?:to|into|in)\s+[\"']?({_FILENAME_TOKEN})[\"']?",
     rf"[\"']({_FILENAME_TOKEN})[\"']",
 )
 
@@ -23,10 +23,12 @@ _CONTENT_PATTERNS = (
     r"with(?:\s+the)?(?:\s+(?:text|content|contents))\s+(.+?)(?:\.(?:\s|$)|$)",
     r"that says\s+[\"'](.+?)[\"']",
     r"that says\s+(.+?)(?:\.(?:\s|$)|$)",
+    r"to say\s+[\"'](.+?)[\"']",
+    r"to say\s+(.+?)(?:\.(?:\s|$)|$)",
 )
 
 _PAIR_PATTERN = re.compile(
-    rf"(?:named|called)\s+({_FILENAME_TOKEN})\s+containing(?:\s+the)?(?:\s+text)?\s+(?:[\"'](.+?)[\"']|(.+?))(?=\s+and\s+(?:a\s+)?file\b|\s+and\s+(?:create|write|named)\b|$)",
+    rf"(?:(?:a\s+)?file\s+(?:named|called)\s+)?({_FILENAME_TOKEN})\s+containing(?:\s+the)?(?:\s+text)?\s+(?:[\"'](.+?)[\"']|(.+?))(?=\s+and\s+(?:a\s+)?file\b|\s+and\s+(?:create|write|named)\b|\s+and\s+{_FILENAME_TOKEN}|$)",
     flags=re.IGNORECASE | re.DOTALL,
 )
 
@@ -92,6 +94,19 @@ def is_coding_goal(goal: str) -> bool:
     return False
 
 
+def last_result_text(raw: str) -> str:
+    """Pick a follow-up write payload from a prior agent turn."""
+    text = (raw or "").strip()
+    if not text:
+        return ""
+    lines = [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip() and not line.strip().lower().startswith("file '")
+    ]
+    return lines[-1] if lines else text
+
+
 def is_file_write_goal(goal: str) -> bool:
     """True when the goal is a workspace file create/write/edit, not a coding or calc task."""
     if is_coding_goal(goal):
@@ -115,7 +130,13 @@ class RuleBasedPlanner:
             return match.group(1).strip()
         return "37 * 42"
 
-    def create_plan(self, goal: str, plan_id: Optional[str] = None, workspace_dir: Optional[str] = None) -> Plan:
+    def create_plan(
+        self,
+        goal: str,
+        plan_id: Optional[str] = None,
+        workspace_dir: Optional[str] = None,
+        session_hints: Optional[Dict[str, Any]] = None,
+    ) -> Plan:
         """
         Decomposes a user goal into a structured Plan graph with dependency relationships.
         """
@@ -138,6 +159,7 @@ class RuleBasedPlanner:
             CONVERSE,
             QUERY_DATA,
             READ_TEXT,
+            READ_THEN_WRITE,
             WRITE_TEXT,
             classify_intent,
         )
@@ -156,6 +178,28 @@ class RuleBasedPlanner:
                 max_retries=extra_retries,
             )
             tasks[t1.id] = t1
+
+        elif kind == READ_THEN_WRITE:
+            source = slots.get("source") or goal.strip()
+            dest = slots.get("dest") or "summary.txt"
+            t1 = PlanTask(
+                id="task_read_1",
+                description="Read workspace file",
+                dependencies=[],
+                required_tool_id="read_file-v1",
+                inputs={"relative_path": source},
+                max_retries=extra_retries,
+            )
+            t2 = PlanTask(
+                id="task_write_2",
+                description="Write prior file contents to the destination",
+                dependencies=["task_read_1"],
+                required_tool_id="write_file-v1",
+                inputs={"relative_path": dest, "content": "$task_read_1.output"},
+                max_retries=extra_retries,
+            )
+            tasks[t1.id] = t1
+            tasks[t2.id] = t2
 
         elif kind == READ_TEXT:
             rel_path = slots.get("filename") or goal.strip()
@@ -220,7 +264,18 @@ class RuleBasedPlanner:
             if not ops:
                 target_name = slots.get("filename") or "note.txt"
                 content = slots.get("content") or extract_file_content(goal)
+                if not content and session_hints and session_hints.get("last_output"):
+                    content = last_result_text(str(session_hints.get("last_output") or ""))
                 ops = [(target_name, content)]
+            elif session_hints and session_hints.get("last_output"):
+                filled = []
+                prior = last_result_text(str(session_hints.get("last_output") or ""))
+                for target_name, content in ops:
+                    if not content and prior:
+                        filled.append((target_name, prior))
+                    else:
+                        filled.append((target_name, content))
+                ops = filled
             prev = None
             for index, (target_name, content) in enumerate(ops, start=1):
                 tid = f"task_write_{index}"
